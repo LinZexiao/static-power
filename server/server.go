@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/http"
 	"static-power/api"
 
 	"github.com/gin-gonic/gin"
@@ -9,6 +10,7 @@ import (
 var srv *gin.Engine = gin.Default()
 
 func RegisterApi(a *api.Api) {
+	srv.Use(CORSMiddleware())
 
 	srv.GET("/api/v0/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
@@ -17,11 +19,35 @@ func RegisterApi(a *api.Api) {
 	})
 
 	srv.GET("/api/v0/miner", func(c *gin.Context) {
-		miners, err := a.GetMinerInfo()
+		miners, err := a.GetAllMiners()
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}
 		c.JSON(200, miners)
+	})
+
+	srv.GET("/api/v0/proportion", func(c *gin.Context) {
+		p, err := a.GetProportion()
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+		}
+		c.JSON(200, gin.H{"proportion": p})
+	})
+
+	srv.GET("/api/v0/static/venus", func(c *gin.Context) {
+		s, err := a.GetVenusStatic()
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+		}
+		c.JSON(200, s)
+	})
+
+	srv.GET("/api/v0/static/lotus", func(c *gin.Context) {
+		s, err := a.GetLotusStatic()
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+		}
+		c.JSON(200, s)
 	})
 
 	srv.POST("/api/v0/peer", func(c *gin.Context) {
@@ -64,4 +90,19 @@ func Run(listen ...string) {
 		listen = append(listen, host)
 	}
 	srv.Run(listen...)
+}
+
+// 跨域请求中间件
+func CORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(http.StatusOK)
+		}
+
+		c.Next()
+	}
 }

@@ -30,7 +30,7 @@ func TestApiUpdate(t *testing.T) {
 		err = api.UpdateMinerAgentInfo(agent)
 		require.NoError(t, err)
 
-		res, err := api.GetMinerInfo()
+		res, err := api.GetAllMiners()
 		require.NoError(t, err)
 		require.Equal(t, 1, len(res))
 		agent.UpdatedAt = res[0].Agent.UpdatedAt
@@ -47,15 +47,15 @@ func TestApiUpdate(t *testing.T) {
 
 		p := Power((big.NewInt(1000)))
 		power := &PowerInfo{
-			MinerID:                  miner,
-			RawBytePower:             &p,
-			QualityAdjustedBytePower: &p,
+			MinerID:         miner,
+			RawBytePower:    &p,
+			QualityAdjPower: &p,
 		}
 
 		err = api.UpdateMinerPowerInfo(power)
 		require.NoError(t, err)
 
-		res, err := api.GetMinerInfo()
+		res, err := api.GetAllMiners()
 		require.NoError(t, err)
 		require.Equal(t, 1, len(res))
 		power.UpdatedAt = res[0].Power.UpdatedAt
@@ -78,7 +78,7 @@ func TestApiUpdate(t *testing.T) {
 		err := api.UpdateMinerPeerInfo(peer)
 		require.NoError(t, err)
 
-		res, err := api.GetMinerInfo()
+		res, err := api.GetAllMiners()
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		peer.UpdatedAt = res[0].Peer.UpdatedAt
@@ -131,15 +131,15 @@ func TestApiGetInfo(t *testing.T) {
 		p2000 := Power((big.NewInt(2000)))
 
 		power0 := &PowerInfo{
-			MinerID:                  miner,
-			RawBytePower:             &p1000,
-			QualityAdjustedBytePower: &p1000,
+			MinerID:         miner,
+			RawBytePower:    &p1000,
+			QualityAdjPower: &p1000,
 		}
 
 		power1 := &PowerInfo{
-			MinerID:                  miner,
-			RawBytePower:             &p2000,
-			QualityAdjustedBytePower: &p2000,
+			MinerID:         miner,
+			RawBytePower:    &p2000,
+			QualityAdjPower: &p2000,
 		}
 
 		err = api.UpdateMinerPowerInfo(power0)
@@ -148,7 +148,7 @@ func TestApiGetInfo(t *testing.T) {
 		err = api.UpdateMinerPowerInfo(power1)
 		require.NoError(t, err)
 
-		res, err := api.GetMinerInfo()
+		res, err := api.GetAllMiners()
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		require.Equal(t, peer1.PeerId, res[0].Peer.PeerId)
@@ -156,6 +156,98 @@ func TestApiGetInfo(t *testing.T) {
 		require.Equal(t, power1.RawBytePower, res[0].Power.RawBytePower)
 
 	})
+
+	t.Run("update power for network", func(t *testing.T) {
+		db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+		require.NoError(t, err)
+
+		api := NewApi(db)
+
+		p := Power((big.NewInt(1000)))
+		power := &PowerInfo{
+			MinerID:         NetWork,
+			RawBytePower:    &p,
+			QualityAdjPower: &p,
+		}
+
+		err = api.UpdateMinerPowerInfo(power)
+		require.NoError(t, err)
+
+		res, err := api.GetAllMiners()
+		require.NoError(t, err)
+		require.Equal(t, 1, len(res))
+		power.UpdatedAt = res[0].Power.UpdatedAt
+		require.Equal(t, *power, *res[0].Power)
+	})
+}
+
+func TestStatic(t *testing.T) {
+	t.Run("get miner info", func(t *testing.T) {
+		db := newDB(t)
+
+		api := NewApi(db)
+
+		agents := []AgentInfo{
+			{
+				MinerID: abi.ActorID(1001),
+				Name:    "dropletv",
+			}, {
+				MinerID: abi.ActorID(1002),
+				Name:    "market_",
+			}, {
+				MinerID: abi.ActorID(1003),
+				Name:    "_venus ",
+			}, {
+				MinerID: abi.ActorID(1004),
+				Name:    " lotus ",
+			}, {
+				MinerID: abi.ActorID(1005),
+				Name:    "boost v",
+			},
+		}
+
+		for _, agent := range agents {
+			err := api.UpdateMinerAgentInfo(&agent)
+			require.NoError(t, err)
+		}
+
+		powers := []PowerInfo{
+			{
+				MinerID:         abi.ActorID(1001),
+				RawBytePower:    pib(1),
+				QualityAdjPower: pib(1),
+			}, {
+				MinerID:         abi.ActorID(1002),
+				RawBytePower:    pib(2),
+				QualityAdjPower: pib(2),
+			},
+			{
+				MinerID:         abi.ActorID(1003),
+				RawBytePower:    pib(3),
+				QualityAdjPower: pib(3),
+			},
+			{
+				MinerID:         abi.ActorID(1004),
+				RawBytePower:    pib(4),
+				QualityAdjPower: pib(4),
+			},
+			{
+				MinerID:         abi.ActorID(1005),
+				RawBytePower:    pib(5),
+				QualityAdjPower: pib(5),
+			},
+		}
+
+		for _, power := range powers {
+			err := api.UpdateMinerPowerInfo(&power)
+			require.NoError(t, err)
+		}
+
+		res, err := api.GetProportion()
+		require.NoError(t, err)
+		require.Equal(t, 0.4, res)
+	})
+
 }
 
 func TestJasonMarshal(t *testing.T) {
@@ -187,9 +279,9 @@ func TestJasonMarshal(t *testing.T) {
 	t.Run("marshal power info ", func(t *testing.T) {
 		p := Power((big.NewInt(1000)))
 		power := &PowerInfo{
-			MinerID:                  1002,
-			RawBytePower:             &p,
-			QualityAdjustedBytePower: &p,
+			MinerID:         1002,
+			RawBytePower:    &p,
+			QualityAdjPower: &p,
 		}
 		data, err := json.Marshal(power)
 		require.NoError(t, err)
@@ -202,4 +294,9 @@ func newDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	return db
+}
+
+func pib(count int) *Power {
+	p := Power((big.NewInt(int64(float64(count) * PiB))))
+	return &p
 }

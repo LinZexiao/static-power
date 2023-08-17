@@ -41,19 +41,9 @@ func main() {
 			},
 		},
 		Commands: []*cli.Command{
-			{
-				Name: "daemon",
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:  "node",
-						Usage: "entry point for a filecoin node",
-					},
-					&cli.StringFlag{
-						Name:  "dsn",
-						Usage: "database connection string",
-					},
-				},
-			},
+			daemonCmd,
+			updatePowerCmd,
+			updateAgentCmd,
 		},
 	}
 	app.Setup()
@@ -98,11 +88,11 @@ var updatePowerCmd = &cli.Command{
 	Name: "update-peer",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
-			Name:  "node-url",
+			Name:  "node",
 			Usage: "entry point for a filecoin node",
 		},
 		&cli.StringFlag{
-			Name:  "node-token",
+			Name:  "token",
 			Usage: "token for a filecoin node",
 		},
 		&cli.BoolFlag{
@@ -118,14 +108,14 @@ var updatePowerCmd = &cli.Command{
 		}
 
 		// get miner power peer and update
-		url := c.String("node-url")
-		token := c.String("node-token")
+		url := c.String("node")
+		token := c.String("token")
 
 		if url == "" {
-			log.Fatal("node-url is required")
+			log.Fatal("node url is required")
 		}
 		if token == "" {
-			log.Fatal("node-token is required")
+			log.Fatal("node token is required")
 		}
 
 		node, closer, err := NewRpcClient(url, &token)
@@ -141,10 +131,18 @@ var updatePowerCmd = &cli.Command{
 
 		for _, miner := range miners {
 			if miner.Power != nil {
-				server.UpdatePowerInfo(miner.Power)
+				err := server.UpdatePowerInfo(miner.Power)
+				if err != nil {
+					log.Printf("update power info for(%d) : %s", miner.ID, err)
+				}
+				log.Printf("update power info for(%d) success , RBP(%s), QAP(%s) ", miner.ID, miner.Power.RawBytePower.String(), miner.Power.QualityAdjPower.String())
 			}
 			if miner.Peer != nil {
-				server.UpdatePeerInfo(miner.Peer)
+				err := server.UpdatePeerInfo(miner.Peer)
+				if err != nil {
+					log.Printf("update peer info for(%d) : %s", miner.ID, err)
+				}
+				log.Printf("update peer info for(%d) success , PeerId(%s), Multiaddrs.len(%d) ", miner.ID, miner.Peer.PeerId, len(*miner.Peer.Multiaddrs))
 			}
 		}
 		log.Println("update power info success")
@@ -167,8 +165,13 @@ var updateAgentCmd = &cli.Command{
 
 		agents := getAgentInfo(miners)
 
+		log.Printf("update (%d) agent info of (%d), ", len(agents), len(miners))
 		for _, agent := range agents {
-			server.UpdateAgentInfo(agent)
+			err := server.UpdateAgentInfo(agent)
+			if err != nil {
+				log.Printf("update agent info for(%d) : %s", agent.MinerID, err)
+			}
+			log.Printf("update agent info for(%d) success , Name(%s)", agent.MinerID, agent.Name)
 		}
 		// get miner get agent
 		return nil
@@ -196,20 +199,30 @@ func getAgentInfo(miners []sapi.Miner) []*sapi.AgentInfo {
 
 			info := miner.Peer
 
-			if info == nil || info.PeerId == "" || len(*info.Multiaddrs) == 0 {
-				return
-			}
-
 			err := func() error {
-
 				host, err := libp2p.New(libp2p.NoListenAddrs)
 				if err != nil {
 					return err
 				}
 				defer host.Close()
 
+				if info == nil || info.PeerId == "" || len(*info.Multiaddrs) == 0 {
+					return fmt.Errorf("no peer info")
+				}
+				if info.PeerId == "" {
+					return fmt.Errorf("empty peer id")
+				}
+				if info.Multiaddrs == nil || len(*info.Multiaddrs) == 0 {
+					return fmt.Errorf("empty multiaddrs")
+				}
+
+				peerId, err := peer.Decode(info.PeerId)
+				if err != nil {
+					return fmt.Errorf("decode peer id %s: %w", info.PeerId, err)
+				}
+
 				addrInfo := peer.AddrInfo{
-					ID:    peer.ID(info.PeerId),
+					ID:    peerId,
 					Addrs: []multiaddr.Multiaddr{},
 				}
 
@@ -240,24 +253,27 @@ func getAgentInfo(miners []sapi.Miner) []*sapi.AgentInfo {
 					Name:    userAgent,
 				}
 
-				if agentInfo.Name != "" {
-					return nil
+				if agentInfo.Name == "" {
+					return fmt.Errorf("user agent empty")
 				}
 
-				if miner.Agent != nil && miner.Agent.Name != agentInfo.Name {
-					ret = append(ret, agentInfo)
+				if miner.Agent != nil && miner.Agent.Name == agentInfo.Name {
+					return fmt.Errorf("user agent (%s) not change", miner.Agent.Name)
 				}
+
+				ret = append(ret, agentInfo)
 				return nil
 			}()
 
 			if err != nil {
-				log.Printf("error getting agent for miner %s: %s", miner.ID.String(), err)
+				log.Printf("get agent for miner %s: %s", miner.ID.String(), err)
 				return
 			}
+
 		}(miner)
 	}
 	wg.Wait()
-	return nil
+	return ret
 }
 
 type MinerInfo = sapi.Miner
@@ -275,12 +291,29 @@ func getMinerInfosWithMinPower(node api.FullNode) ([]*MinerInfo, error) {
 	wg.Add(len(miners))
 	var lk sync.Mutex
 
+	// get network power
 	if len(miners) != 0 {
-
+		power, err := node.StateMinerPower(ctx, miners[0], types.EmptyTSK)
+		if err != nil {
+			panic(err)
+		}
+		rbp := sapi.Power(power.TotalPower.RawBytePower)
+		qap := sapi.Power(power.TotalPower.QualityAdjPower)
+		powerInfo := sapi.PowerInfo{
+			MinerID:         sapi.NetWork,
+			RawBytePower:    &rbp,
+			QualityAdjPower: &qap,
+		}
+		mi := &MinerInfo{
+			ID:    sapi.NetWork,
+			Power: &powerInfo,
+		}
+		ret = append(ret, mi)
 	}
 
 	throttle := make(chan struct{}, 100)
-	for i, miner := range miners {
+	for i := range miners {
+		miner := miners[i]
 		throttle <- struct{}{}
 		go func(miner address.Address) {
 			defer wg.Done()
@@ -311,53 +344,36 @@ func getMinerInfosWithMinPower(node api.FullNode) ([]*MinerInfo, error) {
 			rbp := sapi.Power(power.MinerPower.RawBytePower)
 			qap := sapi.Power(power.MinerPower.QualityAdjPower)
 			powerInfo := sapi.PowerInfo{
-				MinerID:                  aid,
-				RawBytePower:             &rbp,
-				QualityAdjustedBytePower: &qap,
+				MinerID:         aid,
+				RawBytePower:    &rbp,
+				QualityAdjPower: &qap,
 			}
 
-			multiAddress := sapi.Multiaddrs{}
-			for _, addr := range info.Multiaddrs {
-				maddr, err := multiaddr.NewMultiaddrBytes(addr)
-				if err != nil {
-					log.Println("parse multiaddr error: ", err)
-				}
-				multiAddress = append(multiAddress, maddr.String())
-			}
-			peerInfo := sapi.PeerInfo{
-				Multiaddrs: &multiAddress,
-			}
-			if info.PeerId != nil {
-				peerInfo.PeerId = info.PeerId.String()
-			}
 			mi := &MinerInfo{
 				ID:    aid,
 				Power: &powerInfo,
-				Peer:  &peerInfo,
+			}
+
+			if info.PeerId != nil || len(info.Multiaddrs) > 0 {
+				multiAddress := sapi.Multiaddrs{}
+				for _, addr := range info.Multiaddrs {
+					maddr, err := multiaddr.NewMultiaddrBytes(addr)
+					if err != nil {
+						log.Println("parse multiaddr error: ", err)
+					}
+					multiAddress = append(multiAddress, maddr.String())
+				}
+				peerInfo := sapi.PeerInfo{
+					MinerID:    aid,
+					PeerId:     info.PeerId.String(),
+					Multiaddrs: &multiAddress,
+				}
+				mi.Peer = &peerInfo
 			}
 
 			lk.Lock()
 			ret = append(ret, mi)
 			lk.Unlock()
-
-			if i == 0 {
-				// add network power
-				rbp := sapi.Power(power.TotalPower.RawBytePower)
-				qap := sapi.Power(power.TotalPower.QualityAdjPower)
-				powerInfo := sapi.PowerInfo{
-					MinerID:                  sapi.NetWork,
-					RawBytePower:             &rbp,
-					QualityAdjustedBytePower: &qap,
-				}
-				mi := &MinerInfo{
-					ID:    sapi.NetWork,
-					Power: &powerInfo,
-				}
-
-				lk.Lock()
-				ret = append(ret, mi)
-				lk.Unlock()
-			}
 		}(miner)
 	}
 

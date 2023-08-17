@@ -61,14 +61,14 @@ func TestHttp(t *testing.T) {
 		p1000 := api.Power((big.NewInt(1000)))
 		p2000 := api.Power((big.NewInt(2000)))
 		power0 := &api.PowerInfo{
-			MinerID:                  miner,
-			RawBytePower:             &p1000,
-			QualityAdjustedBytePower: &p1000,
+			MinerID:         miner,
+			RawBytePower:    &p1000,
+			QualityAdjPower: &p1000,
 		}
 		power1 := &api.PowerInfo{
-			MinerID:                  miner,
-			RawBytePower:             &p2000,
-			QualityAdjustedBytePower: &p2000,
+			MinerID:         miner,
+			RawBytePower:    &p2000,
+			QualityAdjPower: &p2000,
 		}
 
 		err = UpdatePowerInfo(power0)
@@ -82,5 +82,18 @@ func TestHttp(t *testing.T) {
 		require.Equal(t, peer1.PeerId, res[0].Peer.PeerId)
 		require.Equal(t, agent1.Name, res[0].Agent.Name)
 		require.Equal(t, power1.RawBytePower, res[0].Power.RawBytePower)
+	})
+
+	t.Run("without server", func(t *testing.T) {
+		miner := abi.ActorID(1002)
+		p1000 := api.Power((big.NewInt(1000)))
+
+		power0 := &api.PowerInfo{
+			MinerID:         miner,
+			RawBytePower:    &p1000,
+			QualityAdjPower: &p1000,
+		}
+		err := UpdatePowerInfo(power0)
+		require.NoError(t, err)
 	})
 }
