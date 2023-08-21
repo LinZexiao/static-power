@@ -52,7 +52,43 @@ func (a *Api) getMiner(id abi.ActorID) (*Miner, error) {
 	return &miner, nil
 }
 
+func (a *Api) getOnePower(miner abi.ActorID) (*PowerInfo, error) {
+	var power PowerInfo
+	err := db.Order("updated_at desc").First(&power, "miner_id = ?", miner).Error
+	if err != nil {
+		return nil, err
+	}
+	return &power, nil
+}
+
+func (a *Api) getPowers(ids ...abi.ActorID) ([]PowerInfo, error) {
+	ids = unique(ids)
+
+	var powers []PowerInfo
+	// 获取所有 miner_id in (ids) 的最新的 power 信息
+	err := db.Select("miner_id, raw_byte_power ,quality_adj_power, updated_at,  max(updated_at) as max_updated_at").Where("miner_id in ?", ids).Group("miner_id").Table("power_infos").Find(&powers).Error
+
+	// err := db.Joins("inner join (?) as subquery on power_infos.miner_id = subquery.miner_id and power_infos.updated_at = subquery.updated_at", subquery).Find(&powers, "miner_id in ?", ids).Error
+	if err != nil {
+		return nil, err
+	}
+	return powers, nil
+}
+
+func (a *Api) getAgents(ids ...abi.ActorID) ([]AgentInfo, error) {
+	ids = unique(ids)
+
+	var agents []AgentInfo
+	err := db.Select("miner_id, name, updated_at,  max(updated_at) as max_updated_at").Where("miner_id in ?", ids).Group("miner_id").Table("agent_infos").Find(&agents).Error
+	if err != nil {
+		return nil, err
+	}
+	return agents, nil
+}
+
 func (a *Api) getMiners(ids ...abi.ActorID) ([]Miner, error) {
+	ids = unique(ids)
+
 	var miners []Miner
 	for _, id := range ids {
 		miner, err := a.getMiner(id)
@@ -67,16 +103,20 @@ func (a *Api) getMiners(ids ...abi.ActorID) ([]Miner, error) {
 func (a *Api) GetVenusStatic() (*StaticInfo, error) {
 	venus_agent := []AgentInfo{}
 	db.Where("name like ?", "%venus%").Or("name like ?", "%droplet%").Or("name like ?", "%market%").Find(&venus_agent)
-	venus_power := []PowerInfo{}
-	db.Where("miner_id in ?", sliceMap(venus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })).Find(&venus_power)
+	venus_power, err := a.getPowers(sliceMap(venus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })...)
+	if err != nil {
+		return nil, err
+	}
 	return staticByPower(venus_power, true), nil
 }
 
 func (a *Api) GetLotusStatic() (*StaticInfo, error) {
 	lotus_agent := []AgentInfo{}
 	db.Where("name like ?", "%lotus%").Or("name like ?", "%boost%").Find(&lotus_agent)
-	lotus_power := []PowerInfo{}
-	db.Where("miner_id in ?", sliceMap(lotus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })).Find(&lotus_power)
+	lotus_power, err := a.getPowers(sliceMap(lotus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })...)
+	if err != nil {
+		return nil, err
+	}
 	return staticByPower(lotus_power, true), nil
 }
 
@@ -88,11 +128,18 @@ func (a *Api) GetProportion() (float64, error) {
 	// name contains lotus or boost
 	db.Where("name like ?", "%lotus%").Or("name like ?", "%boost%").Find(&lotus_agent)
 
-	venus_power := []PowerInfo{}
-	lotus_power := []PowerInfo{}
+	// venus_power := []PowerInfo{}
+	// lotus_power := []PowerInfo{}
 
-	db.Where("miner_id in ?", sliceMap(venus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })).Find(&venus_power)
-	db.Where("miner_id in ?", sliceMap(lotus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })).Find(&lotus_power)
+	venus_power, err := a.getPowers(sliceMap(venus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })...)
+	if err != nil {
+		return 0.0, err
+	}
+
+	lotus_power, err := a.getPowers(sliceMap(lotus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })...)
+	if err != nil {
+		return 0.0, err
+	}
 
 	venus_static := staticByPower(venus_power, false)
 	lotus_static := staticByPower(lotus_power, false)
@@ -309,6 +356,18 @@ func sliceMap[T, U any](s []T, f func(T) U) []U {
 	var ret []U
 	for _, v := range s {
 		ret = append(ret, f(v))
+	}
+	return ret
+}
+
+func unique[T comparable](s []T) []T {
+	m := make(map[T]struct{})
+	var ret []T
+	for _, v := range s {
+		if _, ok := m[v]; !ok {
+			m[v] = struct{}{}
+			ret = append(ret, v)
+		}
 	}
 	return ret
 }

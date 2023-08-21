@@ -248,6 +248,100 @@ func TestStatic(t *testing.T) {
 		require.Equal(t, 0.4, res)
 	})
 
+	t.Run("get power info", func(t *testing.T) {
+		db := newDB(t)
+
+		api := NewApi(db)
+
+		powers := []PowerInfo{
+			{
+				MinerID:         abi.ActorID(1002),
+				RawBytePower:    pib(1),
+				QualityAdjPower: pib(1),
+			}, {
+				MinerID:         abi.ActorID(1002),
+				RawBytePower:    pib(2),
+				QualityAdjPower: pib(2),
+			},
+			{
+				MinerID:         abi.ActorID(1003),
+				RawBytePower:    pib(3),
+				QualityAdjPower: pib(3),
+			},
+			{
+				MinerID:         abi.ActorID(1005),
+				RawBytePower:    pib(4),
+				QualityAdjPower: pib(4),
+			},
+			{
+				MinerID:         abi.ActorID(1005),
+				RawBytePower:    pib(5),
+				QualityAdjPower: pib(5),
+			},
+		}
+
+		for _, power := range powers {
+			err := api.UpdateMinerPowerInfo(&power)
+			require.NoError(t, err)
+		}
+
+		res, err := api.getPowers(abi.ActorID(1002), abi.ActorID(1003), abi.ActorID(1005))
+		require.NoError(t, err)
+		for _, power := range res {
+			switch power.MinerID {
+			case abi.ActorID(1002):
+				require.Equal(t, pib(2), power.RawBytePower)
+				require.Equal(t, pib(2), power.QualityAdjPower)
+			case abi.ActorID(1003):
+				require.Equal(t, pib(3), power.RawBytePower)
+				require.Equal(t, pib(3), power.QualityAdjPower)
+			case abi.ActorID(1005):
+				require.Equal(t, pib(5), power.RawBytePower)
+				require.Equal(t, pib(5), power.QualityAdjPower)
+			}
+		}
+	})
+
+	t.Run("get agent info", func(t *testing.T) {
+		db := newDB(t)
+
+		api := NewApi(db)
+
+		agents := []AgentInfo{
+			{
+				MinerID: abi.ActorID(1001),
+				Name:    "dropletv",
+			}, {
+				MinerID: abi.ActorID(1001),
+				Name:    "market_",
+			}, {
+				MinerID: abi.ActorID(1001),
+				Name:    "venus_latest",
+			}, {
+				MinerID: abi.ActorID(1005),
+				Name:    " lotus ",
+			}, {
+				MinerID: abi.ActorID(1005),
+				Name:    "boost_latest",
+			},
+		}
+
+		for _, agent := range agents {
+			err := api.UpdateMinerAgentInfo(&agent)
+			require.NoError(t, err)
+		}
+
+		res, err := api.getAgents(abi.ActorID(1001), abi.ActorID(1005))
+		require.NoError(t, err)
+		for _, agent := range res {
+			switch agent.MinerID {
+			case abi.ActorID(1001):
+				require.Equal(t, "venus_latest", agent.Name)
+			case abi.ActorID(1005):
+				require.Equal(t, "boost_latest", agent.Name)
+			}
+		}
+	})
 }
 
 func TestJasonMarshal(t *testing.T) {
@@ -291,7 +385,7 @@ func TestJasonMarshal(t *testing.T) {
 }
 
 func newDB(t *testing.T) *gorm.DB {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(":memory:?parseTime=true"), &gorm.Config{})
 	require.NoError(t, err)
 	return db
 }
