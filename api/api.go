@@ -107,7 +107,7 @@ func (a *Api) GetVenusStatic() (*StaticInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return staticByPower(venus_power, true), nil
+	return staticByPower(venus_power, false), nil
 }
 
 func (a *Api) GetLotusStatic() (*StaticInfo, error) {
@@ -117,7 +117,7 @@ func (a *Api) GetLotusStatic() (*StaticInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return staticByPower(lotus_power, true), nil
+	return staticByPower(lotus_power, false), nil
 }
 
 func (a *Api) GetProportion() (float64, error) {
@@ -147,6 +147,7 @@ func (a *Api) GetProportion() (float64, error) {
 	if venus_static.QAP == 0 {
 		return 0.0, nil
 	}
+	log.Printf("venus_static.QAP: %f, lotus_static.QAP: %f", venus_static.QAP, lotus_static.QAP)
 	return venus_static.QAP / (venus_static.QAP + lotus_static.QAP), nil
 }
 
