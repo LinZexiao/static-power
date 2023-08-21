@@ -1,8 +1,12 @@
 package server
 
 import (
+	"bytes"
+	"encoding/csv"
 	"net/http"
 	"static-power/api"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -48,6 +52,56 @@ func RegisterApi(a *api.Api) {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}
 		c.JSON(200, s)
+	})
+
+	srv.GET("/api/v0/miners/csv", func(c *gin.Context) {
+		miners, err := a.GetAllMiners()
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+		}
+		// transform to csv
+		buf := bytes.NewBuffer([]byte{})
+		w := csv.NewWriter(buf)
+		w.Write([]string{"miner_id", "peer_id", "multiaddrs", "agent_name", "raw_byte_power", "quality_adj_power"})
+		for _, miner := range miners {
+			minerID := strconv.Itoa(int(miner.ID))
+			peerId := ""
+			multiaddrs := ""
+			agentName := ""
+			rawBytePower := ""
+			qualityAdjPower := ""
+
+			if miner.Peer != nil {
+				peerId = miner.Peer.PeerId
+				if miner.Peer.Multiaddrs != nil {
+					multiaddrs = strings.Join(*miner.Peer.Multiaddrs, " ")
+				}
+			}
+
+			if miner.Agent != nil {
+				agentName = miner.Agent.Name
+			}
+
+			if miner.Power != nil {
+				rawBytePower = miner.Power.RawBytePower.String()
+				qualityAdjPower = miner.Power.QualityAdjPower.String()
+			}
+
+			w.Write([]string{
+				minerID,
+				peerId,
+				multiaddrs,
+				agentName,
+				rawBytePower,
+				qualityAdjPower,
+			})
+		}
+		w.Flush()
+
+		c.Header("Content-Type", "text/csv")
+		c.Header("Content-Disposition", "attachment;filename=miners.csv")
+		c.Header("Content-Length", strconv.Itoa(buf.Len()))
+		c.String(http.StatusOK, buf.String())
 	})
 
 	srv.POST("/api/v0/peer", func(c *gin.Context) {
