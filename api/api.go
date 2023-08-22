@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"gorm.io/gorm"
@@ -20,7 +21,7 @@ func NewApi(d *gorm.DB) *Api {
 	return &Api{}
 }
 
-func (a *Api) getMiner(id abi.ActorID) (*Miner, error) {
+func (a *Api) getMiner(id abi.ActorID, before ...time.Time) (*Miner, error) {
 	var miner Miner
 	err := db.First(&miner, "id = ?", id).Error
 	if err != nil {
@@ -52,21 +53,12 @@ func (a *Api) getMiner(id abi.ActorID) (*Miner, error) {
 	return &miner, nil
 }
 
-func (a *Api) getOnePower(miner abi.ActorID) (*PowerInfo, error) {
-	var power PowerInfo
-	err := db.Order("updated_at desc").First(&power, "miner_id = ?", miner).Error
-	if err != nil {
-		return nil, err
-	}
-	return &power, nil
-}
-
-func (a *Api) getPowers(ids ...abi.ActorID) ([]PowerInfo, error) {
+func (a *Api) getPowers(before time.Time, ids ...abi.ActorID) ([]PowerInfo, error) {
 	ids = unique(ids)
 
 	var powers []PowerInfo
 	// 获取所有 miner_id in (ids) 的最新的 power 信息
-	err := db.Select("miner_id, raw_byte_power ,quality_adj_power, updated_at,  max(updated_at) as max_updated_at").Where("miner_id in ?", ids).Group("miner_id").Table("power_infos").Find(&powers).Error
+	err := db.Select("miner_id, raw_byte_power ,quality_adj_power, updated_at,  max(updated_at) as max_updated_at").Where("miner_id in ?", ids).Where("updated_at < ?", before).Group("miner_id").Table("power_infos").Find(&powers).Error
 
 	// err := db.Joins("inner join (?) as subquery on power_infos.miner_id = subquery.miner_id and power_infos.updated_at = subquery.updated_at", subquery).Find(&powers, "miner_id in ?", ids).Error
 	if err != nil {
@@ -100,55 +92,83 @@ func (a *Api) getMiners(ids ...abi.ActorID) ([]Miner, error) {
 	return miners, nil
 }
 
-func (a *Api) GetVenusStatic() (*StaticInfo, error) {
+func (a *Api) findVenus(before time.Time) ([]abi.ActorID, error) {
 	venus_agent := []AgentInfo{}
-	db.Where("name like ?", "%venus%").Or("name like ?", "%droplet%").Or("name like ?", "%market%").Find(&venus_agent)
-	venus_power, err := a.getPowers(sliceMap(venus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })...)
+
+	// name contains venus or droplet or market
+	subQuery := db.Select("miner_id, name, updated_at,  max(updated_at) as max_updated_at").Where("updated_at < ?", before).Group("miner_id").Table("agent_infos")
+	err := db.Table("(?) as t", subQuery).Where("name like ?", "%venus%").Or("name like ?", "%droplet%").Or("name like ?", "%market%").Find(&venus_agent).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, a := range venus_agent {
+		if a.UpdatedAt.After(before) {
+			log.Printf("miner(%d) has agent info after %s updated at %s", a.MinerID, before, a.UpdatedAt)
+		}
+	}
+
+	ids := sliceMap(venus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
+	ids = unique(ids)
+
+	return ids, nil
+}
+
+func (a *Api) findLotus(before time.Time) ([]abi.ActorID, error) {
+	lotus_agent := []AgentInfo{}
+
+	// name contains lotus or boost
+	subQuery := db.Select("miner_id, name, updated_at,  max(updated_at) as max_updated_at").Where("updated_at < ?", before).Group("miner_id").Table("agent_infos")
+	err := db.Table("(?) as t", subQuery).Where("name like ?", "%lotus%").Or("name like ?", "%boost%").Find(&lotus_agent).Error
+	if err != nil {
+		return nil, err
+	}
+
+	ids := sliceMap(lotus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
+	ids = unique(ids)
+
+	return ids, nil
+}
+
+func (a *Api) GetVenusStatic(before time.Time) (*StaticInfo, error) {
+	venusId, err := a.findVenus(before)
+	if err != nil {
+		return nil, err
+	}
+	venus_power, err := a.getPowers(before, venusId...)
 	if err != nil {
 		return nil, err
 	}
 	return staticByPower(venus_power, false), nil
 }
 
-func (a *Api) GetLotusStatic() (*StaticInfo, error) {
-	lotus_agent := []AgentInfo{}
-	db.Where("name like ?", "%lotus%").Or("name like ?", "%boost%").Find(&lotus_agent)
-	lotus_power, err := a.getPowers(sliceMap(lotus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })...)
+func (a *Api) GetLotusStatic(before time.Time) (*StaticInfo, error) {
+	lotusId, err := a.findLotus(before)
+	if err != nil {
+		return nil, err
+	}
+	lotus_power, err := a.getPowers(before, lotusId...)
 	if err != nil {
 		return nil, err
 	}
 	return staticByPower(lotus_power, false), nil
 }
 
-func (a *Api) GetProportion() (float64, error) {
-	venus_agent := []AgentInfo{}
-	lotus_agent := []AgentInfo{}
-	// name contains venus or droplet or market
-	db.Where("name like ?", "%venus%").Or("name like ?", "%droplet%").Or("name like ?", "%market%").Find(&venus_agent)
-	// name contains lotus or boost
-	db.Where("name like ?", "%lotus%").Or("name like ?", "%boost%").Find(&lotus_agent)
-
-	// venus_power := []PowerInfo{}
-	// lotus_power := []PowerInfo{}
-
-	venus_power, err := a.getPowers(sliceMap(venus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })...)
+func (a *Api) GetProportion(before time.Time) (float64, error) {
+	venusStaticInfo, err := a.GetVenusStatic(before)
+	if err != nil {
+		return 0.0, err
+	}
+	lotusStaticINfo, err := a.GetLotusStatic(before)
 	if err != nil {
 		return 0.0, err
 	}
 
-	lotus_power, err := a.getPowers(sliceMap(lotus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })...)
-	if err != nil {
-		return 0.0, err
-	}
-
-	venus_static := staticByPower(venus_power, false)
-	lotus_static := staticByPower(lotus_power, false)
-
-	if venus_static.QAP == 0 {
+	if venusStaticInfo.QAP == 0 {
 		return 0.0, nil
 	}
-	log.Printf("venus_static.QAP: %f, lotus_static.QAP: %f", venus_static.QAP, lotus_static.QAP)
-	return venus_static.QAP / (venus_static.QAP + lotus_static.QAP), nil
+	log.Printf("venus_static.QAP: %f, lotus_static.QAP: %f", venusStaticInfo.QAP, lotusStaticINfo.QAP)
+	return venusStaticInfo.QAP / (venusStaticInfo.QAP + lotusStaticINfo.QAP), nil
 }
 
 // get miner info to query agent

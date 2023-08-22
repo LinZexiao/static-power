@@ -3,10 +3,12 @@ package server
 import (
 	"bytes"
 	"encoding/csv"
+	"log"
 	"net/http"
 	"static-power/api"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,6 +17,23 @@ var srv *gin.Engine = gin.Default()
 
 func RegisterApi(a *api.Api) {
 	srv.Use(CORSMiddleware())
+
+	srv.GET("/api/v0/test", func(c *gin.Context) {
+		timeParam := c.Query("before")
+
+		before, err := time.Parse(time.RFC3339, timeParam)
+		if err != nil {
+			log.Printf("parse time params(%s) error: %s\n", timeParam, err.Error())
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"message":   "pong",
+			"timeParam": timeParam,
+			"before":    before,
+		})
+	})
 
 	srv.GET("/api/v0/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
@@ -31,7 +50,8 @@ func RegisterApi(a *api.Api) {
 	})
 
 	srv.GET("/api/v0/proportion", func(c *gin.Context) {
-		p, err := a.GetProportion()
+
+		p, err := a.GetProportion(time.Now())
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}
@@ -39,7 +59,21 @@ func RegisterApi(a *api.Api) {
 	})
 
 	srv.GET("/api/v0/static/venus", func(c *gin.Context) {
-		s, err := a.GetVenusStatic()
+
+		before := time.Now()
+
+		timeParam := c.Query("before")
+		if timeParam != "" {
+			var err error
+			before, err = time.Parse(time.RFC3339, timeParam)
+			if err != nil {
+				log.Printf("parse time params(%s) error: %s\n", timeParam, err.Error())
+				c.JSON(500, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		s, err := a.GetVenusStatic(before)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}
@@ -47,7 +81,20 @@ func RegisterApi(a *api.Api) {
 	})
 
 	srv.GET("/api/v0/static/lotus", func(c *gin.Context) {
-		s, err := a.GetLotusStatic()
+		before := time.Now()
+
+		timeParam := c.Query("before")
+		if timeParam != "" {
+			var err error
+			before, err = time.Parse(time.RFC3339, timeParam)
+			if err != nil {
+				log.Printf("parse time params(%s) error: %s\n", timeParam, err.Error())
+				c.JSON(500, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		s, err := a.GetLotusStatic(before)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}

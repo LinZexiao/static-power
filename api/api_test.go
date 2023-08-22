@@ -5,6 +5,7 @@ import (
 	"fmt"
 	mbig "math/big"
 	"testing"
+	"time"
 
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -14,7 +15,6 @@ import (
 )
 
 func TestApiUpdate(t *testing.T) {
-
 	t.Run("update agent", func(t *testing.T) {
 		db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 		require.NoError(t, err)
@@ -243,7 +243,7 @@ func TestStatic(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		res, err := api.GetProportion()
+		res, err := api.GetProportion(time.Now())
 		require.NoError(t, err)
 		require.Equal(t, 0.4, res)
 	})
@@ -253,7 +253,7 @@ func TestStatic(t *testing.T) {
 
 		api := NewApi(db)
 
-		powers := []PowerInfo{
+		powersBeforeStamp := []PowerInfo{
 			{
 				MinerID:         abi.ActorID(1002),
 				RawBytePower:    pib(1),
@@ -280,12 +280,35 @@ func TestStatic(t *testing.T) {
 			},
 		}
 
-		for _, power := range powers {
+		for _, power := range powersBeforeStamp {
 			err := api.UpdateMinerPowerInfo(&power)
 			require.NoError(t, err)
 		}
 
-		res, err := api.getPowers(abi.ActorID(1002), abi.ActorID(1003), abi.ActorID(1005))
+		stamp := time.Now()
+		powersAfterStamp := []PowerInfo{
+			{
+				MinerID:         abi.ActorID(1002),
+				RawBytePower:    pib(5),
+				QualityAdjPower: pib(5),
+			}, {
+				MinerID:         abi.ActorID(1002),
+				RawBytePower:    pib(4),
+				QualityAdjPower: pib(4),
+			},
+			{
+				MinerID:         abi.ActorID(1005),
+				RawBytePower:    pib(1),
+				QualityAdjPower: pib(1),
+			},
+		}
+
+		for _, power := range powersAfterStamp {
+			err := api.UpdateMinerPowerInfo(&power)
+			require.NoError(t, err)
+		}
+
+		res, err := api.getPowers(stamp, abi.ActorID(1002), abi.ActorID(1003), abi.ActorID(1005))
 		require.NoError(t, err)
 		for _, power := range res {
 			switch power.MinerID {
@@ -300,6 +323,23 @@ func TestStatic(t *testing.T) {
 				require.Equal(t, pib(5), power.QualityAdjPower)
 			}
 		}
+
+		res, err = api.getPowers(time.Now(), abi.ActorID(1002), abi.ActorID(1003), abi.ActorID(1005))
+		require.NoError(t, err)
+		for _, power := range res {
+			switch power.MinerID {
+			case abi.ActorID(1002):
+				require.Equal(t, pib(4), power.RawBytePower)
+				require.Equal(t, pib(4), power.QualityAdjPower)
+			case abi.ActorID(1003):
+				require.Equal(t, pib(3), power.RawBytePower)
+				require.Equal(t, pib(3), power.QualityAdjPower)
+			case abi.ActorID(1005):
+				require.Equal(t, pib(1), power.RawBytePower)
+				require.Equal(t, pib(1), power.QualityAdjPower)
+			}
+		}
+
 	})
 
 	t.Run("get agent info", func(t *testing.T) {
@@ -313,13 +353,13 @@ func TestStatic(t *testing.T) {
 				Name:    "dropletv",
 			}, {
 				MinerID: abi.ActorID(1001),
-				Name:    "market_",
+				Name:    "lotus",
 			}, {
 				MinerID: abi.ActorID(1001),
 				Name:    "venus_latest",
 			}, {
 				MinerID: abi.ActorID(1005),
-				Name:    " lotus ",
+				Name:    " market ",
 			}, {
 				MinerID: abi.ActorID(1005),
 				Name:    "boost_latest",
@@ -341,6 +381,78 @@ func TestStatic(t *testing.T) {
 				require.Equal(t, "boost_latest", agent.Name)
 			}
 		}
+	})
+
+	t.Run("find agent", func(t *testing.T) {
+		db := newDB(t)
+
+		api := NewApi(db)
+
+		venusAgentName := "venus_std"
+		lotusAgentName := "lotus_std"
+
+		agents1 := []AgentInfo{
+			{
+				MinerID: abi.ActorID(1001),
+				Name:    "dropletv",
+			}, {
+				MinerID: abi.ActorID(1001),
+				Name:    "lotus",
+			}, {
+				MinerID: abi.ActorID(1001),
+				Name:    venusAgentName,
+			}, {
+				MinerID: abi.ActorID(1005),
+				Name:    " market ",
+			}, {
+				MinerID: abi.ActorID(1005),
+				Name:    lotusAgentName,
+			},
+		}
+
+		for _, agent := range agents1 {
+			err := api.UpdateMinerAgentInfo(&agent)
+			require.NoError(t, err)
+		}
+
+		stamp := time.Now()
+
+		agents2 := []AgentInfo{
+			{
+				MinerID: abi.ActorID(1001),
+				Name:    lotusAgentName,
+			}, {
+				MinerID: abi.ActorID(1005),
+				Name:    venusAgentName,
+			},
+		}
+
+		for _, agent := range agents2 {
+			err := api.UpdateMinerAgentInfo(&agent)
+			require.NoError(t, err)
+		}
+
+		// before stamp
+		res, err := api.findVenus(stamp)
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+		require.Equal(t, abi.ActorID(1001), res[0])
+
+		res, err = api.findLotus(stamp)
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+		require.Equal(t, abi.ActorID(1005), res[0])
+
+		// before now
+		res, err = api.findVenus(time.Now())
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+		require.Equal(t, abi.ActorID(1005), res[0])
+
+		res, err = api.findLotus(time.Now())
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+		require.Equal(t, abi.ActorID(1001), res[0])
 	})
 }
 
