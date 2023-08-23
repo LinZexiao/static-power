@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"static-power/api"
 	"testing"
 
@@ -96,4 +97,9 @@ func TestHttp(t *testing.T) {
 		err := UpdatePowerInfo(power0)
 		require.NoError(t, err)
 	})
+}
+
+func TestGetHours(t *testing.T) {
+	times := timeArray()
+	fmt.Println(times)
 }

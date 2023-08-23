@@ -10,7 +10,18 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 )
 
+type Option struct {
+	Before time.Time
+	Tag    string
+}
+
 type Power big.Int
+
+const (
+	TagLocationSingapore = "Singapore"
+	TagLocationHongKong  = "HongKong"
+	TagLocationJapan     = "Japan"
+)
 
 func (p *Power) Value() (driver.Value, error) {
 	return p.String(), nil
@@ -85,6 +96,7 @@ type PowerInfo struct {
 type AgentInfo struct {
 	MinerID   abi.ActorID `gorm:"index"`
 	Name      string
+	Tag       string
 	UpdatedAt time.Time
 }
 

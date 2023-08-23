@@ -58,7 +58,12 @@ func (a *Api) getPowers(before time.Time, ids ...abi.ActorID) ([]PowerInfo, erro
 
 	var powers []PowerInfo
 	// 获取所有 miner_id in (ids) 的最新的 power 信息
-	err := db.Select("miner_id, raw_byte_power ,quality_adj_power, updated_at,  max(updated_at) as max_updated_at").Where("miner_id in ?", ids).Where("updated_at < ?", before).Group("miner_id").Table("power_infos").Find(&powers).Error
+	query := db.Select("miner_id, raw_byte_power ,quality_adj_power, updated_at,  max(updated_at) as max_updated_at").Where("miner_id in ?", ids)
+	if !before.IsZero() {
+		query = query.Where("updated_at < ?", before)
+	}
+
+	err := query.Group("miner_id").Table("power_infos").Find(&powers).Error
 
 	// err := db.Joins("inner join (?) as subquery on power_infos.miner_id = subquery.miner_id and power_infos.updated_at = subquery.updated_at", subquery).Find(&powers, "miner_id in ?", ids).Error
 	if err != nil {
@@ -92,20 +97,21 @@ func (a *Api) getMiners(ids ...abi.ActorID) ([]Miner, error) {
 	return miners, nil
 }
 
-func (a *Api) findVenus(before time.Time) ([]abi.ActorID, error) {
+func (a *Api) findVenus(opt Option) ([]abi.ActorID, error) {
 	venus_agent := []AgentInfo{}
 
 	// name contains venus or droplet or market
-	subQuery := db.Select("miner_id, name, updated_at,  max(updated_at) as max_updated_at").Where("updated_at < ?", before).Group("miner_id").Table("agent_infos")
+	subQuery := db.Select("miner_id, name, updated_at,  max(updated_at) as max_updated_at")
+	if !opt.Before.IsZero() {
+		subQuery = subQuery.Where("updated_at < ?", opt.Before)
+	}
+	if opt.Tag != "" {
+		subQuery = subQuery.Where("tag = ?", opt.Tag)
+	}
+	subQuery = subQuery.Group("miner_id").Table("agent_infos")
 	err := db.Table("(?) as t", subQuery).Where("name like ?", "%venus%").Or("name like ?", "%droplet%").Or("name like ?", "%market%").Find(&venus_agent).Error
 	if err != nil {
 		return nil, err
-	}
-
-	for _, a := range venus_agent {
-		if a.UpdatedAt.After(before) {
-			log.Printf("miner(%d) has agent info after %s updated at %s", a.MinerID, before, a.UpdatedAt)
-		}
 	}
 
 	ids := sliceMap(venus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
@@ -114,11 +120,18 @@ func (a *Api) findVenus(before time.Time) ([]abi.ActorID, error) {
 	return ids, nil
 }
 
-func (a *Api) findLotus(before time.Time) ([]abi.ActorID, error) {
+func (a *Api) findLotus(opt Option) ([]abi.ActorID, error) {
 	lotus_agent := []AgentInfo{}
 
 	// name contains lotus or boost
-	subQuery := db.Select("miner_id, name, updated_at,  max(updated_at) as max_updated_at").Where("updated_at < ?", before).Group("miner_id").Table("agent_infos")
+	subQuery := db.Select("miner_id, name, updated_at,  max(updated_at) as max_updated_at")
+	if !opt.Before.IsZero() {
+		subQuery = subQuery.Where("updated_at < ?", opt.Before)
+	}
+	if opt.Tag != "" {
+		subQuery = subQuery.Where("tag = ?", opt.Tag)
+	}
+	subQuery = subQuery.Group("miner_id").Table("agent_infos")
 	err := db.Table("(?) as t", subQuery).Where("name like ?", "%lotus%").Or("name like ?", "%boost%").Find(&lotus_agent).Error
 	if err != nil {
 		return nil, err
@@ -130,36 +143,36 @@ func (a *Api) findLotus(before time.Time) ([]abi.ActorID, error) {
 	return ids, nil
 }
 
-func (a *Api) GetVenusStatic(before time.Time) (*StaticInfo, error) {
-	venusId, err := a.findVenus(before)
+func (a *Api) GetVenusStatic(opt Option) (*StaticInfo, error) {
+	venusId, err := a.findVenus(opt)
 	if err != nil {
 		return nil, err
 	}
-	venus_power, err := a.getPowers(before, venusId...)
+	venus_power, err := a.getPowers(opt.Before, venusId...)
 	if err != nil {
 		return nil, err
 	}
 	return staticByPower(venus_power, false), nil
 }
 
-func (a *Api) GetLotusStatic(before time.Time) (*StaticInfo, error) {
-	lotusId, err := a.findLotus(before)
+func (a *Api) GetLotusStatic(opt Option) (*StaticInfo, error) {
+	lotusId, err := a.findLotus(opt)
 	if err != nil {
 		return nil, err
 	}
-	lotus_power, err := a.getPowers(before, lotusId...)
+	lotus_power, err := a.getPowers(opt.Before, lotusId...)
 	if err != nil {
 		return nil, err
 	}
 	return staticByPower(lotus_power, false), nil
 }
 
-func (a *Api) GetProportion(before time.Time) (float64, error) {
-	venusStaticInfo, err := a.GetVenusStatic(before)
+func (a *Api) GetProportion(opt Option) (float64, error) {
+	venusStaticInfo, err := a.GetVenusStatic(opt)
 	if err != nil {
 		return 0.0, err
 	}
-	lotusStaticINfo, err := a.GetLotusStatic(before)
+	lotusStaticINfo, err := a.GetLotusStatic(opt)
 	if err != nil {
 		return 0.0, err
 	}
@@ -284,85 +297,6 @@ func static(miners []Miner, excludeCcOnly bool) *StaticInfo {
 		ret.CCP += CCP
 	}
 	return &ret
-}
-
-func processData(miners []Miner) map[string]*StaticInfo {
-	// data process
-
-	var (
-		All    = "All SP"
-		Venus  = "Venus SP"
-		Lotus  = "Lotus SP"
-		Others = "Others SP"
-
-		Deal      = "DC SP"
-		LotusDeal = "Lotus DC SP"
-		VenusDeal = "Venus DC SP"
-		OtherDeal = "Other DC SP"
-	)
-
-	staticInfo := make(map[string]*StaticInfo)
-	staticInfo[All] = &StaticInfo{}
-	staticInfo[Venus] = &StaticInfo{}
-	staticInfo[Lotus] = &StaticInfo{}
-	staticInfo[Others] = &StaticInfo{}
-	staticInfo[Deal] = &StaticInfo{}
-	staticInfo[LotusDeal] = &StaticInfo{}
-	staticInfo[VenusDeal] = &StaticInfo{}
-	staticInfo[OtherDeal] = &StaticInfo{}
-
-	for _, miner := range miners {
-		if miner.Power == nil {
-			log.Printf("miner(%d) has no power info", miner.ID)
-			continue
-		}
-		if miner.Agent == nil {
-			log.Printf("miner(%d) has no agent info", miner.ID)
-			continue
-		}
-		power := *miner.Power
-		agent := *miner.Agent
-		RBP := float64(power.RawBytePower.Uint64()) / PiB
-		QAP := float64(power.QualityAdjPower.Uint64()) / PiB
-
-		DCP := (QAP - RBP) / 9
-		CCP := RBP - DCP
-
-		// then Condition  should be great than zero , but consider the influence of float64, so we use small enough value
-		hasDeal := DCP > 0.0000000001
-
-		update := func(name string) {
-			a := staticInfo[name]
-			a.Count++
-			a.RBP += RBP
-			a.QAP += QAP
-			a.DCP += DCP
-			a.CCP += CCP
-			staticInfo[name] = a
-		}
-
-		update(All)
-		if isVenus(agent.Name) {
-			update(Venus)
-		} else if isLotus(agent.Name) {
-			update(Lotus)
-		} else {
-			update(Others)
-		}
-
-		if hasDeal {
-			update(Deal)
-			if isVenus(agent.Name) {
-				update(VenusDeal)
-			} else if isLotus(agent.Name) {
-				update(LotusDeal)
-			} else {
-				update(OtherDeal)
-			}
-		}
-	}
-
-	return staticInfo
 }
 
 func isVenus(s string) bool {

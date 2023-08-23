@@ -243,7 +243,7 @@ func TestStatic(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		res, err := api.GetProportion(time.Now())
+		res, err := api.GetProportion(Option{})
 		require.NoError(t, err)
 		require.Equal(t, 0.4, res)
 	})
@@ -433,23 +433,23 @@ func TestStatic(t *testing.T) {
 		}
 
 		// before stamp
-		res, err := api.findVenus(stamp)
+		res, err := api.findVenus(Option{Before: stamp})
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		require.Equal(t, abi.ActorID(1001), res[0])
 
-		res, err = api.findLotus(stamp)
+		res, err = api.findLotus(Option{Before: stamp})
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		require.Equal(t, abi.ActorID(1005), res[0])
 
 		// before now
-		res, err = api.findVenus(time.Now())
+		res, err = api.findVenus(Option{})
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		require.Equal(t, abi.ActorID(1005), res[0])
 
-		res, err = api.findLotus(time.Now())
+		res, err = api.findLotus(Option{})
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		require.Equal(t, abi.ActorID(1001), res[0])

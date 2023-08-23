@@ -152,6 +152,13 @@ var updatePowerCmd = &cli.Command{
 
 var updateAgentCmd = &cli.Command{
 	Name: "update-agent",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:     "tag",
+			Usage:    fmt.Sprintf("tag for agent, values available: [ %s, %s, %s ]", sapi.TagLocationHongKong, sapi.TagLocationJapan, sapi.TagLocationSingapore),
+			Required: true,
+		},
+	},
 	Action: func(c *cli.Context) error {
 		listen := c.String("listen")
 		if listen != "" {
@@ -166,12 +173,14 @@ var updateAgentCmd = &cli.Command{
 		agents := getAgentInfo(miners)
 
 		log.Printf("update (%d) agent info of (%d), ", len(agents), len(miners))
-		for _, agent := range agents {
+		for i := range agents {
+			agent := agents[i]
+			agent.Tag = c.String("tag")
 			err := server.UpdateAgentInfo(agent)
 			if err != nil {
 				log.Printf("update agent info for(%d) : %s", agent.MinerID, err)
 			}
-			log.Printf("update agent info for(%d) success , Name(%s)", agent.MinerID, agent.Name)
+			log.Printf("update agent info for(%d) success , Name(%s), Tag(%s)", agent.MinerID, agent.Name, agent.Tag)
 		}
 		// get miner get agent
 		return nil
@@ -258,7 +267,9 @@ func getAgentInfo(miners []sapi.Miner) []*sapi.AgentInfo {
 				}
 
 				if miner.Agent != nil && miner.Agent.Name == agentInfo.Name {
-					return fmt.Errorf("user agent (%s) not change", miner.Agent.Name)
+					// will not
+					// return fmt.Errorf("user agent (%s) not change", miner.Agent.Name)
+					log.Printf("user agent (%s) not change", miner.Agent.Name)
 				}
 
 				ret = append(ret, agentInfo)

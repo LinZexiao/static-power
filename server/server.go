@@ -50,51 +50,99 @@ func RegisterApi(a *api.Api) {
 	})
 
 	srv.GET("/api/v0/proportion", func(c *gin.Context) {
+		tag := c.Query("tag")
 
-		p, err := a.GetProportion(time.Now())
+		p, err := a.GetProportion(api.Option{Tag: tag})
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}
 		c.JSON(200, gin.H{"proportion": p})
 	})
 
-	srv.GET("/api/v0/static/venus", func(c *gin.Context) {
+	srv.GET("/api/v0/static/many/venus", func(c *gin.Context) {
+		opt := api.Option{
+			Tag: c.Query("tag"),
+		}
 
-		before := time.Now()
+		hours := timeArray()
+		ret := make([]*api.StaticInfo, 0, len(hours))
+
+		for _, hour := range hours {
+			opt.Before = hour
+			s, err := a.GetVenusStatic(opt)
+			if err != nil {
+				log.Printf("get venus static error: %s\n", err.Error())
+				c.JSON(500, gin.H{"error": err.Error()})
+			}
+			ret = append(ret, s)
+		}
+
+		c.JSON(200, ret)
+	})
+
+	srv.GET("/api/v0/static/venus", func(c *gin.Context) {
+		opt := api.Option{
+			Tag: c.Query("tag"),
+		}
 
 		timeParam := c.Query("before")
 		if timeParam != "" {
 			var err error
-			before, err = time.Parse(time.RFC3339, timeParam)
+			before, err := time.Parse(time.RFC3339, timeParam)
 			if err != nil {
 				log.Printf("parse time params(%s) error: %s\n", timeParam, err.Error())
 				c.JSON(500, gin.H{"error": err.Error()})
 				return
 			}
+			opt.Before = before
 		}
 
-		s, err := a.GetVenusStatic(before)
+		s, err := a.GetVenusStatic(opt)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}
 		c.JSON(200, s)
 	})
 
+	srv.GET("/api/v0/static/many/lotus", func(c *gin.Context) {
+		opt := api.Option{
+			Tag: c.Query("tag"),
+		}
+
+		hours := timeArray()
+		ret := make([]*api.StaticInfo, 0, len(hours))
+
+		for _, hour := range hours {
+			opt.Before = hour
+			s, err := a.GetLotusStatic(opt)
+			if err != nil {
+				log.Printf("get lotus static error: %s\n", err.Error())
+				c.JSON(500, gin.H{"error": err.Error()})
+			}
+			ret = append(ret, s)
+		}
+
+		c.JSON(200, ret)
+	})
+
 	srv.GET("/api/v0/static/lotus", func(c *gin.Context) {
-		before := time.Now()
+		opt := api.Option{
+			Tag: c.Query("tag"),
+		}
 
 		timeParam := c.Query("before")
 		if timeParam != "" {
 			var err error
-			before, err = time.Parse(time.RFC3339, timeParam)
+			before, err := time.Parse(time.RFC3339, timeParam)
 			if err != nil {
 				log.Printf("parse time params(%s) error: %s\n", timeParam, err.Error())
 				c.JSON(500, gin.H{"error": err.Error()})
 				return
 			}
+			opt.Before = before
 		}
 
-		s, err := a.GetLotusStatic(before)
+		s, err := a.GetLotusStatic(opt)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}
@@ -206,4 +254,17 @@ func CORSMiddleware() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+func timeArray() []time.Time {
+	ret := make([]time.Time, 0, 7*12+1)
+
+	now := time.Now().Add(time.Hour * 2).Truncate(time.Hour)
+	for i := 0; i < 7*24; i++ {
+		now = now.Add(-time.Hour)
+		if now.Hour()%2 == 0 {
+			ret = append(ret, now)
+		}
+	}
+	return ret
 }
