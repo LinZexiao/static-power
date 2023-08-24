@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -101,8 +102,24 @@ func (a *Api) findVenus(opt Option) ([]abi.ActorID, error) {
 	venus_agent := []AgentInfo{}
 
 	// name contains venus or droplet or market
-	subQuery := db.Select("miner_id, name, updated_at,  max(updated_at) as max_updated_at")
+	subQuery := db.Select("miner_id, name, tag, updated_at,  max(updated_at) as max_updated_at")
 	if !opt.Before.IsZero() {
+
+		// 避免 查询时间戳落入 查询更新时间段
+		var latestUpdatedAt time.Time
+		timeQuery := db.Table("agent_infos").Select("max(updated_at) as max_updated_at").Where("updated_at < ?", opt.Before)
+		if opt.Tag != "" {
+			timeQuery = timeQuery.Where("tag = ?", opt.Tag)
+		}
+		err := timeQuery.Scan(&latestUpdatedAt).Error
+		if err != nil && !strings.Contains(err.Error(), "unsupported Scan") {
+			return nil, fmt.Errorf("get latest update time : %w", err)
+		}
+		if opt.Before.Sub(latestUpdatedAt) < 5*time.Minute {
+			log.Printf("latest update time is too close to query time, query: %s, latest: %s", opt.Before, latestUpdatedAt)
+			opt.Before = opt.Before.Add(5 * time.Minute)
+		}
+
 		subQuery = subQuery.Where("updated_at < ?", opt.Before)
 	}
 	if opt.Tag != "" {
@@ -114,6 +131,28 @@ func (a *Api) findVenus(opt Option) ([]abi.ActorID, error) {
 		return nil, err
 	}
 
+	var maxUpdatedAt time.Time
+	var minUpdatedAt = time.Now()
+
+	for _, agent := range venus_agent {
+		if agent.UpdatedAt.After(maxUpdatedAt) {
+			maxUpdatedAt = agent.UpdatedAt
+		}
+		if agent.UpdatedAt.Before(minUpdatedAt) {
+			minUpdatedAt = agent.UpdatedAt
+		}
+	}
+
+	// rm agent which updated_at is not too old
+	var tmp []AgentInfo
+	for _, agent := range venus_agent {
+		if agent.UpdatedAt.After(maxUpdatedAt.Add(-10 * time.Minute)) {
+			tmp = append(tmp, agent)
+		}
+	}
+
+	venus_agent = tmp
+
 	ids := sliceMap(venus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
 	ids = unique(ids)
 
@@ -124,8 +163,24 @@ func (a *Api) findLotus(opt Option) ([]abi.ActorID, error) {
 	lotus_agent := []AgentInfo{}
 
 	// name contains lotus or boost
-	subQuery := db.Select("miner_id, name, updated_at,  max(updated_at) as max_updated_at")
+	subQuery := db.Select("miner_id, name, tag , updated_at,  max(updated_at) as max_updated_at")
 	if !opt.Before.IsZero() {
+
+		// 避免 查询时间戳落入 查询更新时间段
+		var latestUpdatedAt time.Time
+		timeQuery := db.Table("agent_infos").Select("max(updated_at) as max_updated_at").Where("updated_at < ?", opt.Before)
+		if opt.Tag != "" {
+			timeQuery = timeQuery.Where("tag = ?", opt.Tag)
+		}
+		err := timeQuery.Scan(&latestUpdatedAt).Error
+		if err != nil && !strings.Contains(err.Error(), "unsupported Scan") {
+			return nil, fmt.Errorf("get latest update time : %w", err)
+		}
+		if opt.Before.Sub(latestUpdatedAt) < 5*time.Minute {
+			log.Printf("latest update time is too close to query time, query: %s, latest: %s", opt.Before, latestUpdatedAt)
+			opt.Before = opt.Before.Add(5 * time.Minute)
+		}
+
 		subQuery = subQuery.Where("updated_at < ?", opt.Before)
 	}
 	if opt.Tag != "" {
@@ -136,6 +191,28 @@ func (a *Api) findLotus(opt Option) ([]abi.ActorID, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	var maxUpdatedAt time.Time
+	var minUpdatedAt = time.Now()
+
+	for _, agent := range lotus_agent {
+		if agent.UpdatedAt.After(maxUpdatedAt) {
+			maxUpdatedAt = agent.UpdatedAt
+		}
+		if agent.UpdatedAt.Before(minUpdatedAt) {
+			minUpdatedAt = agent.UpdatedAt
+		}
+	}
+
+	// rm agent which updated_at is not too old
+	var tmp []AgentInfo
+	for _, agent := range lotus_agent {
+		if agent.UpdatedAt.After(maxUpdatedAt.Add(-10 * time.Minute)) {
+			tmp = append(tmp, agent)
+		}
+	}
+
+	lotus_agent = tmp
 
 	ids := sliceMap(lotus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
 	ids = unique(ids)

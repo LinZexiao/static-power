@@ -454,6 +454,74 @@ func TestStatic(t *testing.T) {
 		require.Len(t, res, 1)
 		require.Equal(t, abi.ActorID(1001), res[0])
 	})
+
+	t.Run("find agent with tag", func(t *testing.T) {
+		db := newDB(t)
+
+		api := NewApi(db)
+
+		venusAgentName := "venus_std"
+		lotusAgentName := "lotus_std"
+
+		agents1 := []AgentInfo{
+			{
+				MinerID: abi.ActorID(1001),
+				Name:    "droplet",
+			}, {
+				MinerID: abi.ActorID(1001),
+				Name:    "lotus",
+			}, {
+				MinerID: abi.ActorID(1001),
+				Name:    venusAgentName,
+			}, {
+				MinerID: abi.ActorID(1005),
+				Name:    " market ",
+			}, {
+				MinerID: abi.ActorID(1005),
+				Name:    lotusAgentName,
+			},
+		}
+
+		for _, agent := range agents1 {
+			err := api.UpdateMinerAgentInfo(&agent)
+			require.NoError(t, err)
+		}
+
+		// before now
+		res, err := api.findVenus(Option{Tag: "HongKong"})
+		require.NoError(t, err)
+		require.Len(t, res, 0)
+
+		res, err = api.findLotus(Option{Tag: "HongKong"})
+		require.NoError(t, err)
+		require.Len(t, res, 0)
+
+		agents2 := []AgentInfo{
+			{
+				MinerID: abi.ActorID(1001),
+				Name:    "droplet",
+				Tag:     "HongKong",
+			}, {
+				MinerID: abi.ActorID(1005),
+				Name:    "boost",
+				Tag:     "HongKong",
+			},
+		}
+
+		for _, agent := range agents2 {
+			err := api.UpdateMinerAgentInfo(&agent)
+			require.NoError(t, err)
+		}
+
+		res, err = api.findVenus(Option{Tag: "HongKong"})
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+
+		res, err = api.findLotus(Option{Tag: "HongKong"})
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+
+	})
 }
 
 func TestJasonMarshal(t *testing.T) {
