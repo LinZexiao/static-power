@@ -403,3 +403,10 @@ func unique[T comparable](s []T) []T {
 	}
 	return ret
 }
+
+func CleanUp(before time.Time) {
+	// insert state before delete
+	db.Where("updated_at < ?", before).Delete(&PowerInfo{})
+	db.Where("updated_at < ?", before).Delete(&AgentInfo{})
+	db.Where("updated_at < ?", before).Delete(&PeerInfo{})
+}

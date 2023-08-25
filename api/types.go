@@ -96,7 +96,7 @@ type PowerInfo struct {
 type AgentInfo struct {
 	MinerID   abi.ActorID `gorm:"index"`
 	Name      string
-	Tag       string
+	Tag       string `gorm:"index"`
 	UpdatedAt time.Time
 }
 
