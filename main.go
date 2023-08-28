@@ -27,6 +27,7 @@ func main() {
 			scli.DaemonCmd,
 			scli.UpdatePowerCmd,
 			scli.UpdateAgentCmd,
+			scli.CheckCmd,
 		},
 	}
 	app.Setup()
