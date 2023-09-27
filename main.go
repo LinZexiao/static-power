@@ -13,6 +13,7 @@ func main() {
 		Name:                 "static-power",
 		Suggest:              true,
 		EnableBashCompletion: true,
+		Version:              "v1.0.51cae2c",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name: "listen",
