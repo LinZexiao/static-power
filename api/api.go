@@ -98,6 +98,67 @@ func (a *Api) getMiners(ids ...abi.ActorID) ([]Miner, error) {
 	return miners, nil
 }
 
+func (a *Api) find(opt Option) ([]abi.ActorID, error) {
+	agent := []AgentInfo{}
+
+	// name contains venus or droplet or market
+	subQuery := db.Select("miner_id, name, tag, updated_at,  max(updated_at) as max_updated_at")
+	if !opt.Before.IsZero() {
+
+		// 避免 查询时间戳落入 查询更新时间段
+		var latestUpdatedAt time.Time
+		timeQuery := db.Table("agent_infos").Select("max(updated_at) as max_updated_at").Where("updated_at < ?", opt.Before)
+		if opt.Tag != "" {
+			timeQuery = timeQuery.Where("tag = ?", opt.Tag)
+		}
+		err := timeQuery.Scan(&latestUpdatedAt).Error
+		if err != nil && !strings.Contains(err.Error(), "unsupported Scan") {
+			return nil, fmt.Errorf("get latest update time : %w", err)
+		}
+		if opt.Before.Sub(latestUpdatedAt) < 5*time.Minute {
+			log.Printf("latest update time is too close to query time, query: %s, latest: %s", opt.Before, latestUpdatedAt)
+			opt.Before = opt.Before.Add(5 * time.Minute)
+		}
+		subQuery = subQuery.Where("updated_at < ?", opt.Before)
+	}
+	if opt.Tag != "" {
+		subQuery = subQuery.Where("tag = ?", opt.Tag)
+	}
+	subQuery = subQuery.Group("miner_id").Table("agent_infos")
+
+	err := subQuery.Find(&agent).Error
+	if err != nil {
+		return nil, err
+	}
+
+	var maxUpdatedAt time.Time
+	var minUpdatedAt = time.Now()
+
+	for _, agent := range agent {
+		if agent.UpdatedAt.After(maxUpdatedAt) {
+			maxUpdatedAt = agent.UpdatedAt
+		}
+		if agent.UpdatedAt.Before(minUpdatedAt) {
+			minUpdatedAt = agent.UpdatedAt
+		}
+	}
+
+	// rm agent which updated_at is not too old
+	var tmp []AgentInfo
+	for _, agent := range agent {
+		if agent.UpdatedAt.After(maxUpdatedAt.Add(-10 * time.Minute)) {
+			tmp = append(tmp, agent)
+		}
+	}
+
+	agent = tmp
+
+	ids := sliceMap(agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
+	ids = unique(ids)
+
+	return ids, nil
+}
+
 func (a *Api) findVenus(opt Option) ([]abi.ActorID, error) {
 	venus_agent := []AgentInfo{}
 
@@ -262,10 +323,14 @@ func (a *Api) GetProportion(opt Option) (float64, error) {
 }
 
 // get miner info to query agent
-func (a *Api) GetAllMiners() ([]Miner, error) {
-	var miners []Miner
-	db.Find(&miners)
-	return a.getMiners(sliceMap(miners, func(m Miner) abi.ActorID { return m.ID })...)
+func (a *Api) GetAllMiners(opt Option) ([]Miner, error) {
+
+	minerIDs, err := a.find(opt)
+	if err != nil {
+		return nil, err
+	}
+
+	return a.getMiners(minerIDs...)
 }
 
 // update miner Agent

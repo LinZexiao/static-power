@@ -42,7 +42,23 @@ func RegisterApi(a *api.Api) {
 	})
 
 	srv.GET("/api/v0/miner", func(c *gin.Context) {
-		miners, err := a.GetAllMiners()
+		opt := api.Option{
+			Tag: c.Query("tag"),
+		}
+
+		timeParam := c.Query("before")
+		if timeParam != "" {
+			var err error
+			before, err := time.Parse(time.RFC3339, timeParam)
+			if err != nil {
+				log.Printf("parse time params(%s) error: %s\n", timeParam, err.Error())
+				c.JSON(500, gin.H{"error": err.Error()})
+				return
+			}
+			opt.Before = before
+		}
+
+		miners, err := a.GetAllMiners(opt)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}
@@ -150,7 +166,23 @@ func RegisterApi(a *api.Api) {
 	})
 
 	srv.GET("/api/v0/miners/csv", func(c *gin.Context) {
-		miners, err := a.GetAllMiners()
+		opt := api.Option{
+			Tag: c.Query("tag"),
+		}
+
+		timeParam := c.Query("before")
+		if timeParam != "" {
+			var err error
+			before, err := time.Parse(time.RFC3339, timeParam)
+			if err != nil {
+				log.Printf("parse time params(%s) error: %s\n", timeParam, err.Error())
+				c.JSON(500, gin.H{"error": err.Error()})
+				return
+			}
+			opt.Before = before
+		}
+
+		miners, err := a.GetAllMiners(opt)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}
