@@ -8,12 +8,20 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+var (
+	CurrentCommit string
+
+	BuildVersion = "v1.1"
+
+	Version = BuildVersion + CurrentCommit
+)
+
 func main() {
 	app := &cli.App{
 		Name:                 "static-power",
 		Suggest:              true,
 		EnableBashCompletion: true,
-		Version:              "v1.0.51cae2c",
+		Version:              Version,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name: "listen",
