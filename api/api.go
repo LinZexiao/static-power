@@ -146,7 +146,7 @@ func (a *Api) find(opt Option) ([]abi.ActorID, error) {
 	// rm agent which updated_at is not too old
 	var tmp []AgentInfo
 	for _, agent := range agent {
-		if agent.UpdatedAt.After(maxUpdatedAt.Add(-10 * time.Minute)) {
+		if agent.UpdatedAt.After(maxUpdatedAt.Add(-70 * time.Minute)) {
 			tmp = append(tmp, agent)
 		}
 	}
