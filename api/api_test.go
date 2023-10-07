@@ -30,7 +30,7 @@ func TestApiUpdate(t *testing.T) {
 		err = api.UpdateMinerAgentInfo(agent)
 		require.NoError(t, err)
 
-		res, err := api.GetAllMiners(Option{})
+		res, err := api.GetAllMiners()
 		require.NoError(t, err)
 		require.Equal(t, 1, len(res))
 		agent.UpdatedAt = res[0].Agent.UpdatedAt
@@ -55,7 +55,7 @@ func TestApiUpdate(t *testing.T) {
 		err = api.UpdateMinerPowerInfo(power)
 		require.NoError(t, err)
 
-		res, err := api.GetAllMiners(Option{})
+		res, err := api.GetAllMiners()
 		require.NoError(t, err)
 		require.Equal(t, 1, len(res))
 		power.UpdatedAt = res[0].Power.UpdatedAt
@@ -78,7 +78,7 @@ func TestApiUpdate(t *testing.T) {
 		err := api.UpdateMinerPeerInfo(peer)
 		require.NoError(t, err)
 
-		res, err := api.GetAllMiners(Option{})
+		res, err := api.GetAllMiners()
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		peer.UpdatedAt = res[0].Peer.UpdatedAt
@@ -148,7 +148,7 @@ func TestApiGetInfo(t *testing.T) {
 		err = api.UpdateMinerPowerInfo(power1)
 		require.NoError(t, err)
 
-		res, err := api.GetAllMiners(Option{})
+		res, err := api.GetAllMiners()
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		require.Equal(t, peer1.PeerId, res[0].Peer.PeerId)
@@ -173,7 +173,7 @@ func TestApiGetInfo(t *testing.T) {
 		err = api.UpdateMinerPowerInfo(power)
 		require.NoError(t, err)
 
-		res, err := api.GetAllMiners(Option{})
+		res, err := api.GetAllMiners()
 		require.NoError(t, err)
 		require.Equal(t, 1, len(res))
 		power.UpdatedAt = res[0].Power.UpdatedAt

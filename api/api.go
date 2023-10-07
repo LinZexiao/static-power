@@ -323,7 +323,14 @@ func (a *Api) GetProportion(opt Option) (float64, error) {
 }
 
 // get miner info to query agent
-func (a *Api) GetAllMiners(opt Option) ([]Miner, error) {
+func (a *Api) GetAllMiners() ([]Miner, error) {
+	var miners []Miner
+	db.Find(&miners)
+	return a.getMiners(sliceMap(miners, func(m Miner) abi.ActorID { return m.ID })...)
+}
+
+// export miners
+func (a *Api) GetMiners(opt Option) ([]Miner, error) {
 
 	minerIDs, err := a.find(opt)
 	if err != nil {
