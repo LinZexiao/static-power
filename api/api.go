@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"static-power/util"
 	"strings"
 	"time"
 
@@ -55,7 +56,7 @@ func (a *Api) getMiner(id abi.ActorID, before ...time.Time) (*Miner, error) {
 }
 
 func (a *Api) getPowers(before time.Time, ids ...abi.ActorID) ([]PowerInfo, error) {
-	ids = unique(ids)
+	ids = util.Unique(ids)
 
 	var powers []PowerInfo
 	// 获取所有 miner_id in (ids) 的最新的 power 信息
@@ -74,7 +75,7 @@ func (a *Api) getPowers(before time.Time, ids ...abi.ActorID) ([]PowerInfo, erro
 }
 
 func (a *Api) getAgents(ids ...abi.ActorID) ([]AgentInfo, error) {
-	ids = unique(ids)
+	ids = util.Unique(ids)
 
 	var agents []AgentInfo
 	err := db.Select("miner_id, name, updated_at,  max(updated_at) as max_updated_at").Where("miner_id in ?", ids).Group("miner_id").Table("agent_infos").Find(&agents).Error
@@ -85,7 +86,7 @@ func (a *Api) getAgents(ids ...abi.ActorID) ([]AgentInfo, error) {
 }
 
 func (a *Api) getMiners(ids ...abi.ActorID) ([]Miner, error) {
-	ids = unique(ids)
+	ids = util.Unique(ids)
 
 	var miners []Miner
 	for _, id := range ids {
@@ -153,8 +154,8 @@ func (a *Api) find(opt Option) ([]abi.ActorID, error) {
 
 	agent = tmp
 
-	ids := sliceMap(agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
-	ids = unique(ids)
+	ids := util.SliceMap(agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
+	ids = util.Unique(ids)
 
 	return ids, nil
 }
@@ -214,8 +215,8 @@ func (a *Api) findVenus(opt Option) ([]abi.ActorID, error) {
 
 	venus_agent = tmp
 
-	ids := sliceMap(venus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
-	ids = unique(ids)
+	ids := util.SliceMap(venus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
+	ids = util.Unique(ids)
 
 	return ids, nil
 }
@@ -275,8 +276,8 @@ func (a *Api) findLotus(opt Option) ([]abi.ActorID, error) {
 
 	lotus_agent = tmp
 
-	ids := sliceMap(lotus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
-	ids = unique(ids)
+	ids := util.SliceMap(lotus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
+	ids = util.Unique(ids)
 
 	return ids, nil
 }
@@ -326,7 +327,7 @@ func (a *Api) GetProportion(opt Option) (float64, error) {
 func (a *Api) GetAllMiners() ([]Miner, error) {
 	var miners []Miner
 	db.Find(&miners)
-	return a.getMiners(sliceMap(miners, func(m Miner) abi.ActorID { return m.ID })...)
+	return a.getMiners(util.SliceMap(miners, func(m Miner) abi.ActorID { return m.ID })...)
 }
 
 // export miners
@@ -380,101 +381,6 @@ func (a *Api) UpdateMinerPowerInfo(power *PowerInfo) error {
 }
 
 const PiB float64 = 1024 * 1024 * 1024 * 1024 * 1024
-
-type StaticInfo struct {
-	Count int
-	RBP   float64
-	QAP   float64
-
-	// Raw Power of DCP sector
-	DCP float64
-	// Raw Power of CCP sector
-	CCP float64
-}
-
-func staticByPower(powers []PowerInfo, excludeCcOnly bool) *StaticInfo {
-	ret := StaticInfo{
-		Count: len(powers),
-	}
-	for _, p := range powers {
-		RBP := float64(p.RawBytePower.Uint64()) / PiB
-		QAP := float64(p.QualityAdjPower.Uint64()) / PiB
-
-		DCP := (QAP - RBP) / 9
-		CCP := RBP - DCP
-
-		ccOnly := CCP > 0.0000000001 && DCP < 0.0000000001
-		if excludeCcOnly && ccOnly {
-			log.Printf("miner(%d) has no DC power", p.MinerID)
-			continue
-		}
-
-		ret.RBP += RBP
-		ret.QAP += QAP
-		ret.DCP += DCP
-		ret.CCP += CCP
-	}
-	return &ret
-}
-
-func static(miners []Miner, excludeCcOnly bool) *StaticInfo {
-	ret := StaticInfo{
-		Count: len(miners),
-	}
-	for _, miner := range miners {
-		if miner.Power == nil {
-			log.Printf("miner(%d) has no power info", miner.ID)
-			continue
-		}
-		power := *miner.Power
-		RBP := float64(power.RawBytePower.Uint64()) / PiB
-		QAP := float64(power.QualityAdjPower.Uint64()) / PiB
-
-		DCP := (QAP - RBP) / 9
-		CCP := RBP - DCP
-
-		ccOnly := CCP > 0.0000000001 && DCP < 0.0000000001
-		if excludeCcOnly && ccOnly {
-			log.Printf("miner(%d) has no DC power", miner.ID)
-			continue
-		}
-
-		ret.Count++
-		ret.RBP += RBP
-		ret.QAP += QAP
-		ret.DCP += DCP
-		ret.CCP += CCP
-	}
-	return &ret
-}
-
-func isVenus(s string) bool {
-	return strings.Contains(s, "venus") || strings.Contains(s, "droplet")
-}
-
-func isLotus(s string) bool {
-	return strings.Contains(s, "lotus") || strings.Contains(s, "boost")
-}
-
-func sliceMap[T, U any](s []T, f func(T) U) []U {
-	var ret []U
-	for _, v := range s {
-		ret = append(ret, f(v))
-	}
-	return ret
-}
-
-func unique[T comparable](s []T) []T {
-	m := make(map[T]struct{})
-	var ret []T
-	for _, v := range s {
-		if _, ok := m[v]; !ok {
-			m[v] = struct{}{}
-			ret = append(ret, v)
-		}
-	}
-	return ret
-}
 
 func CleanUp(before time.Time) {
 	// insert state before delete

@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql/driver"
 	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -13,6 +14,9 @@ import (
 type Option struct {
 	Before time.Time
 	Tag    string
+
+	// only use for diff with before
+	After time.Time
 }
 
 type Power big.Int
@@ -101,4 +105,40 @@ type AgentInfo struct {
 }
 
 type Api struct {
+}
+
+type StaticInfo struct {
+	Count int
+	RBP   float64
+	QAP   float64
+
+	// Raw Power of DCP sector
+	DCP float64
+	// Raw Power of CCP sector
+	CCP float64
+}
+
+func staticByPower(powers []PowerInfo, excludeCcOnly bool) *StaticInfo {
+	ret := StaticInfo{
+		Count: len(powers),
+	}
+	for _, p := range powers {
+		RBP := float64(p.RawBytePower.Uint64()) / PiB
+		QAP := float64(p.QualityAdjPower.Uint64()) / PiB
+
+		DCP := (QAP - RBP) / 9
+		CCP := RBP - DCP
+
+		ccOnly := CCP > 0.0000000001 && DCP < 0.0000000001
+		if excludeCcOnly && ccOnly {
+			log.Printf("miner(%d) has no DC power", p.MinerID)
+			continue
+		}
+
+		ret.RBP += RBP
+		ret.QAP += QAP
+		ret.DCP += DCP
+		ret.CCP += CCP
+	}
+	return &ret
 }

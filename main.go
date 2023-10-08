@@ -37,6 +37,7 @@ func main() {
 			scli.UpdatePowerCmd,
 			scli.UpdateAgentCmd,
 			scli.CheckCmd,
+			scli.DiffCmd,
 		},
 	}
 	app.Setup()
