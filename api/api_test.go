@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	mbig "math/big"
+	"static-power/core"
 	"testing"
 	"time"
 
@@ -433,23 +434,23 @@ func TestStatic(t *testing.T) {
 		}
 
 		// before stamp
-		res, err := api.findVenus(Option{Before: stamp})
+		res, err := api.find(Option{Before: stamp, AgentType: core.AgentTypeVenus})
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		require.Equal(t, abi.ActorID(1001), res[0])
 
-		res, err = api.findLotus(Option{Before: stamp})
+		res, err = api.find(Option{Before: stamp, AgentType: core.AgentTypeLotus})
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		require.Equal(t, abi.ActorID(1005), res[0])
 
 		// before now
-		res, err = api.findVenus(Option{})
+		res, err = api.find(Option{AgentType: core.AgentTypeVenus})
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		require.Equal(t, abi.ActorID(1005), res[0])
 
-		res, err = api.findLotus(Option{})
+		res, err = api.find(Option{AgentType: core.AgentTypeLotus})
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 		require.Equal(t, abi.ActorID(1001), res[0])
@@ -488,11 +489,11 @@ func TestStatic(t *testing.T) {
 		}
 
 		// before now
-		res, err := api.findVenus(Option{Tag: "HongKong"})
+		res, err := api.find(Option{Tag: "HongKong", AgentType: core.AgentTypeVenus})
 		require.NoError(t, err)
 		require.Len(t, res, 0)
 
-		res, err = api.findLotus(Option{Tag: "HongKong"})
+		res, err = api.find(Option{Tag: "HongKong", AgentType: core.AgentTypeLotus})
 		require.NoError(t, err)
 		require.Len(t, res, 0)
 
@@ -513,11 +514,11 @@ func TestStatic(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		res, err = api.findVenus(Option{Tag: "HongKong"})
+		res, err = api.find(Option{Tag: "HongKong", AgentType: core.AgentTypeVenus})
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 
-		res, err = api.findLotus(Option{Tag: "HongKong"})
+		res, err = api.find(Option{Tag: "HongKong", AgentType: core.AgentTypeLotus})
 		require.NoError(t, err)
 		require.Len(t, res, 1)
 

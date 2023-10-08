@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"static-power/core"
 	"static-power/util"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ func NewApi(d *gorm.DB) *Api {
 	return &Api{}
 }
 
-func (a *Api) getMiner(id abi.ActorID, before ...time.Time) (*Miner, error) {
+func (a *Api) getMiner(id abi.ActorID, opt ...Option) (*Miner, error) {
 	var miner Miner
 	err := db.First(&miner, "id = ?", id).Error
 	if err != nil {
@@ -127,7 +128,20 @@ func (a *Api) find(opt Option) ([]abi.ActorID, error) {
 	}
 	subQuery = subQuery.Group("miner_id").Table("agent_infos")
 
-	err := subQuery.Find(&agent).Error
+	// err := subQuery.Find(&agent).Error
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	var err error
+	switch opt.AgentType {
+	case core.AgentTypeOther:
+		err = subQuery.Find(&agent).Error
+	case core.AgentTypeLotus:
+		err = db.Table("(?) as t", subQuery).Where("name like ?", "%lotus%").Or("name like ?", "%boost%").Find(&agent).Error
+	case core.AgentTypeVenus:
+		err = db.Table("(?) as t", subQuery).Where("name like ?", "%venus%").Or("name like ?", "%droplet%").Or("name like ?", "%market%").Find(&agent).Error
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -160,133 +174,12 @@ func (a *Api) find(opt Option) ([]abi.ActorID, error) {
 	return ids, nil
 }
 
-func (a *Api) findVenus(opt Option) ([]abi.ActorID, error) {
-	venus_agent := []AgentInfo{}
-
-	// name contains venus or droplet or market
-	subQuery := db.Select("miner_id, name, tag, updated_at,  max(updated_at) as max_updated_at")
-	if !opt.Before.IsZero() {
-
-		// 避免 查询时间戳落入 查询更新时间段
-		var latestUpdatedAt time.Time
-		timeQuery := db.Table("agent_infos").Select("max(updated_at) as max_updated_at").Where("updated_at < ?", opt.Before)
-		if opt.Tag != "" {
-			timeQuery = timeQuery.Where("tag = ?", opt.Tag)
-		}
-		err := timeQuery.Scan(&latestUpdatedAt).Error
-		if err != nil && !strings.Contains(err.Error(), "unsupported Scan") {
-			return nil, fmt.Errorf("get latest update time : %w", err)
-		}
-		if opt.Before.Sub(latestUpdatedAt) < 5*time.Minute {
-			log.Printf("latest update time is too close to query time, query: %s, latest: %s", opt.Before, latestUpdatedAt)
-			opt.Before = opt.Before.Add(5 * time.Minute)
-		}
-
-		subQuery = subQuery.Where("updated_at < ?", opt.Before)
-	}
-	if opt.Tag != "" {
-		subQuery = subQuery.Where("tag = ?", opt.Tag)
-	}
-	subQuery = subQuery.Group("miner_id").Table("agent_infos")
-	err := db.Table("(?) as t", subQuery).Where("name like ?", "%venus%").Or("name like ?", "%droplet%").Or("name like ?", "%market%").Find(&venus_agent).Error
+func (a *Api) GetStatic(opt Option) (*StaticInfo, error) {
+	venusId, err := a.find(opt)
 	if err != nil {
 		return nil, err
 	}
 
-	var maxUpdatedAt time.Time
-	var minUpdatedAt = time.Now()
-
-	for _, agent := range venus_agent {
-		if agent.UpdatedAt.After(maxUpdatedAt) {
-			maxUpdatedAt = agent.UpdatedAt
-		}
-		if agent.UpdatedAt.Before(minUpdatedAt) {
-			minUpdatedAt = agent.UpdatedAt
-		}
-	}
-
-	// rm agent which updated_at is not too old
-	var tmp []AgentInfo
-	for _, agent := range venus_agent {
-		if agent.UpdatedAt.After(maxUpdatedAt.Add(-10 * time.Minute)) {
-			tmp = append(tmp, agent)
-		}
-	}
-
-	venus_agent = tmp
-
-	ids := util.SliceMap(venus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
-	ids = util.Unique(ids)
-
-	return ids, nil
-}
-
-func (a *Api) findLotus(opt Option) ([]abi.ActorID, error) {
-	lotus_agent := []AgentInfo{}
-
-	// name contains lotus or boost
-	subQuery := db.Select("miner_id, name, tag , updated_at,  max(updated_at) as max_updated_at")
-	if !opt.Before.IsZero() {
-
-		// 避免 查询时间戳落入 查询更新时间段
-		var latestUpdatedAt time.Time
-		timeQuery := db.Table("agent_infos").Select("max(updated_at) as max_updated_at").Where("updated_at < ?", opt.Before)
-		if opt.Tag != "" {
-			timeQuery = timeQuery.Where("tag = ?", opt.Tag)
-		}
-		err := timeQuery.Scan(&latestUpdatedAt).Error
-		if err != nil && !strings.Contains(err.Error(), "unsupported Scan") {
-			return nil, fmt.Errorf("get latest update time : %w", err)
-		}
-		if opt.Before.Sub(latestUpdatedAt) < 5*time.Minute {
-			log.Printf("latest update time is too close to query time, query: %s, latest: %s", opt.Before, latestUpdatedAt)
-			opt.Before = opt.Before.Add(5 * time.Minute)
-		}
-
-		subQuery = subQuery.Where("updated_at < ?", opt.Before)
-	}
-	if opt.Tag != "" {
-		subQuery = subQuery.Where("tag = ?", opt.Tag)
-	}
-	subQuery = subQuery.Group("miner_id").Table("agent_infos")
-	err := db.Table("(?) as t", subQuery).Where("name like ?", "%lotus%").Or("name like ?", "%boost%").Find(&lotus_agent).Error
-	if err != nil {
-		return nil, err
-	}
-
-	var maxUpdatedAt time.Time
-	var minUpdatedAt = time.Now()
-
-	for _, agent := range lotus_agent {
-		if agent.UpdatedAt.After(maxUpdatedAt) {
-			maxUpdatedAt = agent.UpdatedAt
-		}
-		if agent.UpdatedAt.Before(minUpdatedAt) {
-			minUpdatedAt = agent.UpdatedAt
-		}
-	}
-
-	// rm agent which updated_at is not too old
-	var tmp []AgentInfo
-	for _, agent := range lotus_agent {
-		if agent.UpdatedAt.After(maxUpdatedAt.Add(-10 * time.Minute)) {
-			tmp = append(tmp, agent)
-		}
-	}
-
-	lotus_agent = tmp
-
-	ids := util.SliceMap(lotus_agent, func(a AgentInfo) abi.ActorID { return a.MinerID })
-	ids = util.Unique(ids)
-
-	return ids, nil
-}
-
-func (a *Api) GetVenusStatic(opt Option) (*StaticInfo, error) {
-	venusId, err := a.findVenus(opt)
-	if err != nil {
-		return nil, err
-	}
 	venus_power, err := a.getPowers(opt.Before, venusId...)
 	if err != nil {
 		return nil, err
@@ -294,24 +187,15 @@ func (a *Api) GetVenusStatic(opt Option) (*StaticInfo, error) {
 	return staticByPower(venus_power, false), nil
 }
 
-func (a *Api) GetLotusStatic(opt Option) (*StaticInfo, error) {
-	lotusId, err := a.findLotus(opt)
-	if err != nil {
-		return nil, err
-	}
-	lotus_power, err := a.getPowers(opt.Before, lotusId...)
-	if err != nil {
-		return nil, err
-	}
-	return staticByPower(lotus_power, false), nil
-}
-
 func (a *Api) GetProportion(opt Option) (float64, error) {
-	venusStaticInfo, err := a.GetVenusStatic(opt)
+	opt.AgentType = core.AgentTypeVenus
+	venusStaticInfo, err := a.GetStatic(opt)
 	if err != nil {
 		return 0.0, err
 	}
-	lotusStaticINfo, err := a.GetLotusStatic(opt)
+
+	opt.AgentType = core.AgentTypeLotus
+	lotusStaticINfo, err := a.GetStatic(opt)
 	if err != nil {
 		return 0.0, err
 	}
@@ -332,13 +216,24 @@ func (a *Api) GetAllMiners() ([]Miner, error) {
 
 // export miners
 func (a *Api) GetMiners(opt Option) ([]Miner, error) {
-
 	minerIDs, err := a.find(opt)
 	if err != nil {
 		return nil, err
 	}
 
 	return a.getMiners(minerIDs...)
+}
+
+// diff QAP miners
+func (a *Api) Diff(opt Option) ([]core.Difference, error) {
+
+	_, err := a.find(opt)
+	if err != nil {
+		return nil, err
+	}
+
+	// return a.getMiners(minerIDs...)
+	return nil, nil
 }
 
 // update miner Agent

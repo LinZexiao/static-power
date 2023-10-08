@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"log"
+	"static-power/core"
 	"strings"
 	"time"
 
@@ -17,6 +18,8 @@ type Option struct {
 
 	// only use for diff with before
 	After time.Time
+
+	AgentType core.AgentType
 }
 
 type Power big.Int

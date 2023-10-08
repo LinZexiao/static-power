@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"static-power/api"
+	"static-power/core"
 	"strconv"
 	"strings"
 	"time"
@@ -61,7 +62,8 @@ func RegisterApi(a *api.Api) {
 
 	srv.GET("/api/v0/static/many/venus", func(c *gin.Context) {
 		opt := api.Option{
-			Tag: c.Query("tag"),
+			Tag:       c.Query("tag"),
+			AgentType: core.AgentTypeVenus,
 		}
 
 		hours := timeArray()
@@ -69,7 +71,7 @@ func RegisterApi(a *api.Api) {
 
 		for _, hour := range hours {
 			opt.Before = hour
-			s, err := a.GetVenusStatic(opt)
+			s, err := a.GetStatic(opt)
 			if err != nil {
 				log.Printf("get venus static error: %s\n", err.Error())
 				c.JSON(500, gin.H{"error": err.Error()})
@@ -82,7 +84,8 @@ func RegisterApi(a *api.Api) {
 
 	srv.GET("/api/v0/static/venus", func(c *gin.Context) {
 		opt := api.Option{
-			Tag: c.Query("tag"),
+			Tag:       c.Query("tag"),
+			AgentType: core.AgentTypeVenus,
 		}
 
 		timeParam := c.Query("before")
@@ -97,7 +100,7 @@ func RegisterApi(a *api.Api) {
 			opt.Before = before
 		}
 
-		s, err := a.GetVenusStatic(opt)
+		s, err := a.GetStatic(opt)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}
@@ -106,7 +109,8 @@ func RegisterApi(a *api.Api) {
 
 	srv.GET("/api/v0/static/many/lotus", func(c *gin.Context) {
 		opt := api.Option{
-			Tag: c.Query("tag"),
+			Tag:       c.Query("tag"),
+			AgentType: core.AgentTypeLotus,
 		}
 
 		hours := timeArray()
@@ -114,7 +118,7 @@ func RegisterApi(a *api.Api) {
 
 		for _, hour := range hours {
 			opt.Before = hour
-			s, err := a.GetLotusStatic(opt)
+			s, err := a.GetStatic(opt)
 			if err != nil {
 				log.Printf("get lotus static error: %s\n", err.Error())
 				c.JSON(500, gin.H{"error": err.Error()})
@@ -127,7 +131,8 @@ func RegisterApi(a *api.Api) {
 
 	srv.GET("/api/v0/static/lotus", func(c *gin.Context) {
 		opt := api.Option{
-			Tag: c.Query("tag"),
+			Tag:       c.Query("tag"),
+			AgentType: core.AgentTypeLotus,
 		}
 
 		timeParam := c.Query("before")
@@ -142,7 +147,7 @@ func RegisterApi(a *api.Api) {
 			opt.Before = before
 		}
 
-		s, err := a.GetLotusStatic(opt)
+		s, err := a.GetStatic(opt)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}

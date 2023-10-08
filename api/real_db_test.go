@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"static-power/core"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ func TestFindVenus(t *testing.T) {
 
 	// bf := time.Now().Add(-time.Hour * 4)
 	bf := time.Now()
-	res, err := a.findVenus(Option{Tag: "Japan", Before: bf})
+	res, err := a.find(Option{Tag: "Japan", Before: bf, AgentType: core.AgentTypeVenus})
 	require.NoError(t, err)
 	fmt.Println(len(res), res)
 }
