@@ -2,7 +2,10 @@ package cli
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
+	"os"
+	"path"
 	"strings"
 	"testing"
 
@@ -139,4 +142,18 @@ func connectPeer() error {
 	fmt.Println(userAgent)
 
 	return nil
+}
+
+func TestCSVRead(t *testing.T) {
+	path := path.Join("/root/tanlang/others/static-power/.vscode/1009.csv")
+	file, err := os.Open(path)
+	require.NoError(t, err)
+	defer file.Close()
+
+	csvReader := csv.NewReader(file)
+
+	for i := 0; i < 10; i++ {
+		row, err := csvReader.Read()
+		fmt.Println(row, err)
+	}
 }

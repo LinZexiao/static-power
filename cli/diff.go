@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"os"
 	"static-power/core"
@@ -29,76 +30,23 @@ var DiffCmd = &cli.Command{
 			return fmt.Errorf("must provide two csv files")
 		}
 
-		miners := make([][]core.MinerBrief, 2)
-		QAPs := [][]float64{{0, 0, 0}, {0, 0, 0}}
-
-		for idx, f := range []string{c.Args().Get(0), c.Args().Get(1)} {
-			miners[idx] = make([]core.MinerBrief, 0)
-
-			if _, err := os.Stat(f); os.IsNotExist(err) {
-				return fmt.Errorf("file %s does not exist", f)
-			}
-			file, err := os.Open(f)
-			if err != nil {
-				return fmt.Errorf("open %s: %w", f, err)
-			}
-			defer file.Close()
-			csvReader := csv.NewReader(file)
-
-			toSkip := c.Uint("skip")
-			for {
-				if toSkip > 0 {
-					toSkip--
-					_, err := csvReader.Read()
-					if err != nil {
-						return fmt.Errorf("skip %s: %w", f, err)
-					}
-					continue
-				}
-
-				row, err := csvReader.Read()
-				if err != nil {
-					break
-				}
-				if len(row) != 6 {
-					return fmt.Errorf("invalid row %v", row)
-				}
-				actorNum, err := strconv.ParseUint(row[0], 10, 64)
-				if err != nil {
-					return fmt.Errorf("invalid actor id %s", row[0])
-				}
-				actor := abi.ActorID(actorNum)
-
-				defer func() {
-					if err := recover(); err != nil {
-						fmt.Printf("error occur : %v in raw: %v ", err, row)
-						// panic(err)
-						return
-					}
-				}()
-
-				qap := util.PiB(row[5])
-				at := core.AgentTypeFromString(row[3])
-				if at == core.AgentTypeLotus {
-					QAPs[idx][core.AgentTypeLotus] += qap
-				} else if at == core.AgentTypeVenus {
-					QAPs[idx][core.AgentTypeVenus] += qap
-				}
-
-				miners[idx] = append(miners[idx], core.MinerBrief{
-					Actor: actor,
-					Agent: row[3],
-					QAP:   qap,
-				})
-			}
+		before, err := readCSV(c.Args().Get(0))
+		if err != nil {
+			return err
 		}
-
-		diffs := core.Diff(miners[0], miners[1])
+		after, err := readCSV(c.Args().Get(1))
+		if err != nil {
+			return err
+		}
+		diffs := core.Diff(before, after)
+		sumBefore := core.Summarize(before)
+		sumAfter := core.Summarize(after)
 
 		// print out diff
-		fmt.Printf("Agent, QAP_in_PiB,QAP_diff \n")
-		fmt.Printf("venus ,%.5f,%.5f\n", QAPs[1][core.AgentTypeVenus], QAPs[1][core.AgentTypeVenus]-QAPs[0][core.AgentTypeVenus])
-		fmt.Printf("lotus ,%.5f,%.5f\n", QAPs[1][core.AgentTypeLotus], QAPs[1][core.AgentTypeLotus]-QAPs[0][core.AgentTypeLotus])
+		fmt.Printf("agent, count, count_diff, quality_adj_power ,quality_adj_power_diff \n")
+		fmt.Printf("venus , %d , %d ,%.5f,%.5f\n", sumAfter[core.AgentTypeVenus].Count, sumAfter[core.AgentTypeVenus].Count-sumBefore[core.AgentTypeVenus].Count, sumBefore[core.AgentTypeVenus].QAP, sumAfter[core.AgentTypeVenus].QAP-sumBefore[core.AgentTypeVenus].QAP)
+		fmt.Printf("lotus , %d , %d ,%.5f,%.5f\n", sumAfter[core.AgentTypeLotus].Count, sumAfter[core.AgentTypeLotus].Count-sumBefore[core.AgentTypeLotus].Count, sumBefore[core.AgentTypeLotus].QAP, sumAfter[core.AgentTypeLotus].QAP-sumBefore[core.AgentTypeLotus].QAP)
+
 		fmt.Println()
 
 		fmt.Printf("agent,diff_type,actor,qap_change_pib\n")
@@ -108,4 +56,77 @@ var DiffCmd = &cli.Command{
 
 		return nil
 	},
+}
+
+func readCSV(path string) ([]core.MinerBrief, error) {
+	ret := make([]core.MinerBrief, 0)
+
+	ret = make([]core.MinerBrief, 0)
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, fmt.Errorf("file %s does not exist", path)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer file.Close()
+	csvReader := csv.NewReader(file)
+
+	firstLine, err := csvReader.Read()
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+
+	toSkip := checkCsvVersion(firstLine)
+	for {
+		if toSkip > 0 {
+			toSkip--
+			_, err := csvReader.Read()
+			if err != nil && !errors.Is(err, csv.ErrFieldCount) {
+				return nil, fmt.Errorf("skip %s: %w", path, err)
+			}
+			continue
+		}
+
+		row, err := csvReader.Read()
+		if err != nil && !errors.Is(err, csv.ErrFieldCount) {
+			break
+		}
+		// skip empty row
+		if len(row) == 0 {
+			continue
+		}
+		if len(row) != 6 {
+			return nil, fmt.Errorf("invalid row %v", row)
+		}
+		actorNum, err := strconv.ParseUint(row[0], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid actor id %s", row[0])
+		}
+		actor := abi.ActorID(actorNum)
+
+		defer func() {
+			if err := recover(); err != nil {
+				fmt.Printf("error occur : %v in raw: %v ", err, row)
+				// panic(err)
+				return
+			}
+		}()
+
+		ret = append(ret, core.MinerBrief{
+			Actor: actor,
+			Agent: row[3],
+			QAP:   util.PiB(row[5]),
+		})
+	}
+
+	return ret, nil
+}
+
+func checkCsvVersion(row []string) int {
+	if len(row) != 1 {
+		return 0
+	}
+	return core.CsvVersion2Skip(row[0])
 }

@@ -6,6 +6,22 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 )
 
+const (
+	MinerCsvVersion = "1.0"
+	DiffCsvVersion  = "2.0"
+)
+
+func CsvVersion2Skip(version string) int {
+	switch version {
+	case MinerCsvVersion:
+		return 4
+	case DiffCsvVersion:
+		return 4
+	default:
+		return 0
+	}
+}
+
 type AgentType uint8
 
 const (

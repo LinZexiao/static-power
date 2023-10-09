@@ -181,8 +181,7 @@ func RegisterApi(a *api.Api) {
 		buf := bytes.NewBuffer([]byte{})
 		w := csv.NewWriter(buf)
 
-		const csvVersion = "1.0"
-		w.Write([]string{csvVersion})
+		w.Write([]string{core.MinerCsvVersion})
 
 		// get summary
 		// agent count quality_adj_power
@@ -279,8 +278,7 @@ func RegisterApi(a *api.Api) {
 		buf := bytes.NewBuffer([]byte{})
 		w := csv.NewWriter(buf)
 
-		const csvVersion = "2.0"
-		w.Write([]string{csvVersion})
+		w.Write([]string{core.DiffCsvVersion})
 
 		// output summary
 		// agent count count_diff QAP_in_PiB QAP_diff
