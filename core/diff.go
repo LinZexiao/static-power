@@ -8,60 +8,22 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 )
 
-type DiffType uint8
-
-const (
-	UnKnown DiffType = iota
-	QAPChange
-	Added
-	Removed
-
-	// indicates that the agent change between before and after
-	AgentChanged
-)
-
-func (d DiffType) String() string {
-	switch d {
-	case Added:
-		return "added"
-	case Removed:
-		return "removed"
-	case QAPChange:
-		return "qap_changed"
-	case AgentChanged:
-		return "agent_changed"
-	default:
-		return "unknown"
+func Diff(before, after []MinerBrief) []Difference {
+	key := func(m MinerBrief) abi.ActorID {
+		return m.Actor
 	}
-}
+	bf := util.Slice2Map(before, key)
+	af := util.Slice2Map(after, key)
 
-type MinerForDiff struct {
-	Actor abi.ActorID
-	Agent string
-	// RBP in PiB
-	QAP float64
-}
-
-// compute diff
-type Difference struct {
-	Actor    abi.ActorID
-	DiffType DiffType
-	Agent    AgentType
-
-	// QAP in PiB
-	QAP float64
-}
-
-func Diff(before, after map[abi.ActorID]MinerForDiff) []Difference {
-	add, keep, rm := util.DiffSet(before, after)
+	add, keep, rm := util.DiffSet(bf, af)
 	diffs := make([]Difference, 0, len(add)+len(keep)+len(rm))
 
 	for actor := range keep {
-		qapDiff := after[actor].QAP - before[actor].QAP
+		qapDiff := af[actor].QAP - bf[actor].QAP
 		diffType := QAPChange
 
-		agentBefore := AgentTypeFromString(before[actor].Agent)
-		agentAfter := AgentTypeFromString(after[actor].Agent)
+		agentBefore := AgentTypeFromString(bf[actor].Agent)
+		agentAfter := AgentTypeFromString(af[actor].Agent)
 		if agentAfter != agentBefore {
 			diffType = AgentChanged
 		}
@@ -106,4 +68,32 @@ func Diff(before, after map[abi.ActorID]MinerForDiff) []Difference {
 	})
 
 	return diffs
+}
+
+func Summarize(miners []MinerBrief) map[AgentType]Summary {
+	ret := make(map[AgentType]Summary)
+	// divide miners by agent type
+	venusMiners := util.SliceFilter(miners, func(miner MinerBrief) bool {
+		return AgentTypeFromString(miner.Agent) == AgentTypeVenus
+	})
+	lotusMiners := util.SliceFilter(miners, func(miner MinerBrief) bool {
+		return AgentTypeFromString(miner.Agent) == AgentTypeLotus
+	})
+
+	ret[AgentTypeVenus] = summarize(venusMiners)
+	ret[AgentTypeLotus] = summarize(lotusMiners)
+
+	return ret
+}
+
+func summarize(miners []MinerBrief) Summary {
+	ret := Summary{
+		Count: (len(miners)),
+	}
+
+	for _, miner := range miners {
+		ret.QAP += miner.QAP
+	}
+
+	return ret
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"static-power/core"
+	"static-power/util"
 	"strings"
 	"time"
 
@@ -80,10 +81,12 @@ func (m *Multiaddrs) Scan(src interface{}) error {
 }
 
 type Miner struct {
-	ID    abi.ActorID `gorm:"primaryKey"`
-	Power *PowerInfo  `gorm:"-"`
-	Peer  *PeerInfo   `gorm:"-"`
-	Agent *AgentInfo  `gorm:"-"`
+	ID abi.ActorID `gorm:"primaryKey"`
+
+	// Power 字段可以为空, 因为有些 miner 曾经有算力,但是后来掉光了, 并且,原来的 Power 记录也过期了, 这个时候 power 信息就为空
+	Power *PowerInfo `gorm:"-"`
+	Peer  *PeerInfo  `gorm:"-"`
+	Agent *AgentInfo `gorm:"-"`
 }
 
 type PeerInfo struct {
@@ -144,4 +147,16 @@ func staticByPower(powers []PowerInfo, excludeCcOnly bool) *StaticInfo {
 		ret.CCP += CCP
 	}
 	return &ret
+}
+
+func GetBrief(miner Miner) core.MinerBrief {
+	qap := 0.0
+	if miner.Power != nil {
+		qap = util.PiB(miner.Power.QualityAdjPower.String())
+	}
+	return core.MinerBrief{
+		Actor: miner.ID,
+		Agent: miner.Agent.Name,
+		QAP:   qap,
+	}
 }

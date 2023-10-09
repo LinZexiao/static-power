@@ -1,6 +1,10 @@
 package core
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/filecoin-project/go-state-types/abi"
+)
 
 type AgentType uint8
 
@@ -29,4 +33,52 @@ func AgentTypeFromString(agent string) AgentType {
 	} else {
 		return AgentTypeOther
 	}
+}
+
+type DiffType uint8
+
+const (
+	UnKnown DiffType = iota
+	QAPChange
+	Added
+	Removed
+
+	// indicates that the agent change between before and after
+	AgentChanged
+)
+
+func (d DiffType) String() string {
+	switch d {
+	case Added:
+		return "added"
+	case Removed:
+		return "removed"
+	case QAPChange:
+		return "qap_changed"
+	case AgentChanged:
+		return "agent_changed"
+	default:
+		return "unknown"
+	}
+}
+
+type MinerBrief struct {
+	Actor abi.ActorID
+	Agent string
+	// QAP in PiB
+	QAP float64
+}
+
+type Difference struct {
+	Actor    abi.ActorID
+	DiffType DiffType
+	Agent    AgentType
+
+	// QAP in PiB
+	QAP float64
+}
+
+type Summary struct {
+	Count int
+	QAP   float64
 }

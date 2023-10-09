@@ -29,11 +29,11 @@ var DiffCmd = &cli.Command{
 			return fmt.Errorf("must provide two csv files")
 		}
 
-		miners := make([]map[abi.ActorID]core.MinerForDiff, 2)
+		miners := make([][]core.MinerBrief, 2)
 		QAPs := [][]float64{{0, 0, 0}, {0, 0, 0}}
 
 		for idx, f := range []string{c.Args().Get(0), c.Args().Get(1)} {
-			miners[idx] = make(map[abi.ActorID]core.MinerForDiff)
+			miners[idx] = make([]core.MinerBrief, 0)
 
 			if _, err := os.Stat(f); os.IsNotExist(err) {
 				return fmt.Errorf("file %s does not exist", f)
@@ -85,11 +85,11 @@ var DiffCmd = &cli.Command{
 					QAPs[idx][core.AgentTypeVenus] += qap
 				}
 
-				miners[idx][actor] = core.MinerForDiff{
+				miners[idx] = append(miners[idx], core.MinerBrief{
 					Actor: actor,
 					Agent: row[3],
 					QAP:   qap,
-				}
+				})
 			}
 		}
 

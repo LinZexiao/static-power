@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"static-power/api"
 	"static-power/core"
+	"static-power/util"
 	"strconv"
 	"strings"
 	"time"
@@ -175,9 +176,26 @@ func RegisterApi(a *api.Api) {
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 		}
+
 		// transform to csv
 		buf := bytes.NewBuffer([]byte{})
 		w := csv.NewWriter(buf)
+
+		const csvVersion = "1.0"
+		w.Write([]string{csvVersion})
+
+		// get summary
+		// agent count quality_adj_power
+		summery := core.Summarize(util.SliceMap(miners, api.GetBrief))
+		w.Write([]string{"agent", "count", "quality_adj_power"})
+		for k, s := range summery {
+			w.Write([]string{
+				k.String(),
+				strconv.Itoa(s.Count),
+				strconv.FormatFloat(s.QAP, 'f', 5, 64),
+			})
+		}
+
 		w.Write([]string{"miner_id", "peer_id", "multiaddrs", "agent_name", "raw_byte_power", "quality_adj_power"})
 		for _, miner := range miners {
 			minerID := strconv.Itoa(int(miner.ID))
@@ -212,6 +230,87 @@ func RegisterApi(a *api.Api) {
 				qualityAdjPower,
 			})
 		}
+		w.Flush()
+
+		c.Header("Content-Type", "text/csv")
+		c.Header("Content-Disposition", "attachment;filename=miners.csv")
+		c.Header("Content-Length", strconv.Itoa(buf.Len()))
+		c.String(http.StatusOK, buf.String())
+	})
+
+	srv.GET("/api/v0/diff/csv", func(c *gin.Context) {
+		opt := api.Option{
+			Tag: c.Query("tag"),
+		}
+
+		parseTime := func(s string) (time.Time, error) {
+			if s == "" {
+				return time.Time{}, nil
+			}
+			return time.Parse(time.RFC3339, s)
+		}
+
+		var err error
+		opt.Before, err = parseTime(c.Query("before"))
+		if err != nil {
+			log.Printf("parse time params(%s) error: %s\n", c.Query("before"), err.Error())
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+
+		opt.After, err = parseTime(c.Query("after"))
+		if err != nil {
+			log.Printf("parse time params(%s) error: %s\n", c.Query("after"), err.Error())
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+
+		if opt.Before.IsZero() || opt.After.IsZero() || !opt.Before.Before(opt.After) {
+			c.JSON(500, gin.H{"error": "before and after must be set and before should less than after"})
+			return
+		}
+
+		summaries, difference, err := a.Diff(opt)
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+		}
+
+		// transform to csv
+		buf := bytes.NewBuffer([]byte{})
+		w := csv.NewWriter(buf)
+
+		const csvVersion = "2.0"
+		w.Write([]string{csvVersion})
+
+		// output summary
+		// agent count count_diff QAP_in_PiB QAP_diff
+		w.Write([]string{"agent", "count", "count_diff", "quality_adj_power", "quality_adj_power_diff"})
+		w.Write([]string{
+			core.AgentTypeVenus.String(),
+			strconv.Itoa(summaries[1][core.AgentTypeVenus].Count),
+			strconv.Itoa(summaries[1][core.AgentTypeVenus].Count - summaries[0][core.AgentTypeVenus].Count),
+			strconv.FormatFloat(summaries[1][core.AgentTypeVenus].QAP, 'f', 5, 64),
+			strconv.FormatFloat(summaries[1][core.AgentTypeVenus].QAP-summaries[0][core.AgentTypeVenus].QAP, 'f', 5, 64),
+		})
+		w.Write([]string{
+			core.AgentTypeLotus.String(),
+			strconv.Itoa(summaries[1][core.AgentTypeLotus].Count),
+			strconv.Itoa(summaries[1][core.AgentTypeLotus].Count - summaries[0][core.AgentTypeLotus].Count),
+			strconv.FormatFloat(summaries[1][core.AgentTypeLotus].QAP, 'f', 5, 64),
+			strconv.FormatFloat(summaries[1][core.AgentTypeLotus].QAP-summaries[0][core.AgentTypeLotus].QAP, 'f', 5, 64),
+		})
+
+		// agent,diff_type,actor,qap_change_pib
+		w.Write([]string{"agent", "diff_type", "actor", "qap_change_pib"})
+		for _, d := range difference {
+			w.Write([]string{
+				d.Agent.String(),
+				d.DiffType.String(),
+				d.Actor.String(),
+				strconv.FormatFloat(d.QAP, 'f', 5, 64),
+			})
+		}
+
 		w.Flush()
 
 		c.Header("Content-Type", "text/csv")

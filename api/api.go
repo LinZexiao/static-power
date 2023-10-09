@@ -2,11 +2,9 @@ package api
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"static-power/core"
 	"static-power/util"
-	"strings"
 	"time"
 
 	"github.com/filecoin-project/go-state-types/abi"
@@ -36,13 +34,23 @@ func (a *Api) getMiner(id abi.ActorID, opts ...Option) (*Miner, error) {
 		return nil, err
 	}
 
-	commonQuery := db.Order("updated_at desc")
-	if !opt.Before.IsZero() {
-		commonQuery = commonQuery.Where("updated_at < ?", opt.Before)
+	commonScope := func(db *gorm.DB) *gorm.DB {
+		ret := db.Order("updated_at desc").Where("miner_id = ?", id)
+		if !opt.Before.IsZero() {
+			ret = ret.Where("updated_at < ?", opt.Before)
+		}
+		return ret
+	}
+
+	specifyTag := func(db *gorm.DB) *gorm.DB {
+		if opt.Tag != "" {
+			return db.Where("tag = ?", opt.Tag)
+		}
+		return db
 	}
 
 	var peer PeerInfo
-	err = commonQuery.First(&peer, "miner_id = ?", miner.ID).Error
+	err = db.Scopes(commonScope).First(&peer).Error
 	if err == nil {
 		miner.Peer = &peer
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -50,19 +58,21 @@ func (a *Api) getMiner(id abi.ActorID, opts ...Option) (*Miner, error) {
 	}
 
 	var power PowerInfo
-	err = commonQuery.First(&power, "miner_id = ?", miner.ID).Error
+	err = db.Scopes(commonScope).First(&power).Error
 	if err == nil {
 		miner.Power = &power
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
+	// some miner may has no power when it was punished
+	if miner.Power != nil {
+		if power.QualityAdjPower == nil || power.RawBytePower == nil {
+			log.Printf("miner(%d) has no power when(%v)", id, opt)
+		}
+	}
 
 	var agent AgentInfo
-	if opt.Tag != "" {
-		err = commonQuery.Where("tag = ?", opt.Tag).First(&agent, "miner_id = ?", miner.ID).Error
-	} else {
-		err = commonQuery.First(&agent, "miner_id = ?", miner.ID).Error
-	}
+	err = db.Scopes(commonScope, specifyTag).First(&agent).Error
 	if err == nil {
 		miner.Agent = &agent
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -83,19 +93,18 @@ func (a *Api) getPowers(before time.Time, ids ...abi.ActorID) ([]PowerInfo, erro
 
 	err := query.Group("miner_id").Table("power_infos").Find(&powers).Error
 
-	// err := db.Joins("inner join (?) as subquery on power_infos.miner_id = subquery.miner_id and power_infos.updated_at = subquery.updated_at", subquery).Find(&powers, "miner_id in ?", ids).Error
 	if err != nil {
 		return nil, err
 	}
 	return powers, nil
 }
 
-func (a *Api) getMiners(ids ...abi.ActorID) ([]Miner, error) {
+func (a *Api) getMiners(opt Option, ids ...abi.ActorID) ([]Miner, error) {
 	ids = util.Unique(ids)
 
 	var miners []Miner
 	for _, id := range ids {
-		miner, err := a.getMiner(id)
+		miner, err := a.getMiner(id, opt)
 		if err != nil {
 			return nil, err
 		}
@@ -112,30 +121,26 @@ func (a *Api) find(opt Option) ([]abi.ActorID, error) {
 	if !opt.Before.IsZero() {
 
 		// 避免 查询时间戳落入 查询更新时间段
-		var latestUpdatedAt time.Time
-		timeQuery := db.Table("agent_infos").Select("max(updated_at) as max_updated_at").Where("updated_at < ?", opt.Before)
-		if opt.Tag != "" {
-			timeQuery = timeQuery.Where("tag = ?", opt.Tag)
-		}
-		err := timeQuery.Scan(&latestUpdatedAt).Error
-		if err != nil && !strings.Contains(err.Error(), "unsupported Scan") {
-			return nil, fmt.Errorf("get latest update time : %w", err)
-		}
-		if opt.Before.Sub(latestUpdatedAt) < 5*time.Minute {
-			log.Printf("latest update time is too close to query time, query: %s, latest: %s", opt.Before, latestUpdatedAt)
-			opt.Before = opt.Before.Add(5 * time.Minute)
-		}
+		// var latestUpdatedAt time.Time
+		// timeQuery := db.Table("agent_infos").Select("max(updated_at) as max_updated_at").Where("updated_at < ?", opt.Before)
+		// if opt.Tag != "" {
+		// 	timeQuery = timeQuery.Where("tag = ?", opt.Tag)
+		// }
+		// err := timeQuery.Scan(&latestUpdatedAt).Error
+		// if err != nil && !strings.Contains(err.Error(), "unsupported Scan") {
+		// 	return nil, fmt.Errorf("get latest update time : %w", err)
+		// }
+		// if opt.Before.Sub(latestUpdatedAt) < 5*time.Minute {
+		// 	log.Printf("latest update time is too close to query time, query: %s, latest: %s", opt.Before, latestUpdatedAt)
+		// 	opt.Before = opt.Before.Add(5 * time.Minute)
+		// }
+
 		subQuery = subQuery.Where("updated_at < ?", opt.Before)
 	}
 	if opt.Tag != "" {
 		subQuery = subQuery.Where("tag = ?", opt.Tag)
 	}
 	subQuery = subQuery.Group("miner_id").Table("agent_infos")
-
-	// err := subQuery.Find(&agent).Error
-	// if err != nil {
-	// 	return nil, err
-	// }
 
 	var err error
 	switch opt.AgentType {
@@ -215,7 +220,7 @@ func (a *Api) GetProportion(opt Option) (float64, error) {
 func (a *Api) GetAllMiners() ([]Miner, error) {
 	var miners []Miner
 	db.Find(&miners)
-	return a.getMiners(util.SliceMap(miners, func(m Miner) abi.ActorID { return m.ID })...)
+	return a.getMiners(Option{}, util.SliceMap(miners, func(m Miner) abi.ActorID { return m.ID })...)
 }
 
 // export miners
@@ -225,19 +230,30 @@ func (a *Api) GetMiners(opt Option) ([]Miner, error) {
 		return nil, err
 	}
 
-	return a.getMiners(minerIDs...)
+	return a.getMiners(opt, minerIDs...)
 }
 
 // diff QAP miners
-func (a *Api) Diff(opt Option) ([]core.Difference, error) {
+func (a *Api) Diff(opt Option) ([]map[core.AgentType]core.Summary, []core.Difference, error) {
 
-	_, err := a.find(opt)
+	before, err := a.GetMiners(opt)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	opt.Before = opt.After
+	after, err := a.GetMiners(Option{Before: opt.Before.Add(1 * time.Minute)})
 
-	// return a.getMiners(minerIDs...)
-	return nil, nil
+	briefBefore := util.SliceMap(before, GetBrief)
+	briefAfter := util.SliceMap(after, GetBrief)
+
+	difference := core.Diff(briefBefore, briefAfter)
+
+	summaryBefore := core.Summarize(briefBefore)
+	summaryAfter := core.Summarize(briefAfter)
+
+	summaries := []map[core.AgentType]core.Summary{summaryBefore, summaryAfter}
+
+	return summaries, difference, nil
 }
 
 // update miner Agent

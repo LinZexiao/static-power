@@ -48,6 +48,16 @@ func SliceMap[T, U any](s []T, f func(T) U) []U {
 	return ret
 }
 
+func SliceFilter[T any](s []T, f func(T) bool) []T {
+	var ret []T
+	for _, v := range s {
+		if f(v) {
+			ret = append(ret, v)
+		}
+	}
+	return ret
+}
+
 func Unique[T comparable](s []T) []T {
 	m := make(map[T]struct{})
 	var ret []T
@@ -66,4 +76,12 @@ func IsVenus(s string) bool {
 
 func IsLotus(s string) bool {
 	return strings.Contains(s, "lotus") || strings.Contains(s, "boost")
+}
+
+func Slice2Map[K comparable, T any](s []T, key func(T) K) map[K]T {
+	m := make(map[K]T)
+	for _, v := range s {
+		m[key(v)] = v
+	}
+	return m
 }

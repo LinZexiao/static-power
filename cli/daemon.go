@@ -11,6 +11,7 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var defaultTimeToLive = time.Hour * 24 * 7
@@ -35,7 +36,9 @@ var DaemonCmd = &cli.Command{
 		listen := c.String("listen")
 
 		if dsn == "" {
-			db, err = gorm.Open(sqlite.Open("test.db"), &gorm.Config{})
+			db, err = gorm.Open(sqlite.Open("test.db"), &gorm.Config{
+				Logger: logger.Default.LogMode(logger.Info),
+			})
 		} else {
 			db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
 		}

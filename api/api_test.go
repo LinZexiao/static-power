@@ -13,6 +13,7 @@ import (
 	"github.com/test-go/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func TestApiUpdate(t *testing.T) {
@@ -371,17 +372,6 @@ func TestStatic(t *testing.T) {
 			err := api.UpdateMinerAgentInfo(&agent)
 			require.NoError(t, err)
 		}
-
-		res, err := api.getAgents(abi.ActorID(1001), abi.ActorID(1005))
-		require.NoError(t, err)
-		for _, agent := range res {
-			switch agent.MinerID {
-			case abi.ActorID(1001):
-				require.Equal(t, "venus_latest", agent.Name)
-			case abi.ActorID(1005):
-				require.Equal(t, "boost_latest", agent.Name)
-			}
-		}
 	})
 
 	t.Run("find agent", func(t *testing.T) {
@@ -572,7 +562,9 @@ func newDB(t *testing.T) *gorm.DB {
 }
 
 func realDB(t *testing.T, path string) *gorm.DB {
-	db, err := gorm.Open(sqlite.Open(path+"?parseTime=true"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(path+"?parseTime=true"), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Info),
+	})
 	require.NoError(t, err)
 	return db
 }
