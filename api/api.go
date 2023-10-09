@@ -24,14 +24,25 @@ func NewApi(d *gorm.DB) *Api {
 	return &Api{}
 }
 
-func (a *Api) getMiner(id abi.ActorID, opt ...Option) (*Miner, error) {
+func (a *Api) getMiner(id abi.ActorID, opts ...Option) (*Miner, error) {
+	opt := Option{}
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
 	var miner Miner
 	err := db.First(&miner, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
+
+	commonQuery := db.Order("updated_at desc")
+	if !opt.Before.IsZero() {
+		commonQuery = commonQuery.Where("updated_at < ?", opt.Before)
+	}
+
 	var peer PeerInfo
-	err = db.Order("updated_at desc").First(&peer, "miner_id = ?", miner.ID).Error
+	err = commonQuery.First(&peer, "miner_id = ?", miner.ID).Error
 	if err == nil {
 		miner.Peer = &peer
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -39,7 +50,7 @@ func (a *Api) getMiner(id abi.ActorID, opt ...Option) (*Miner, error) {
 	}
 
 	var power PowerInfo
-	err = db.Order("updated_at desc").First(&power, "miner_id = ?", miner.ID).Error
+	err = commonQuery.First(&power, "miner_id = ?", miner.ID).Error
 	if err == nil {
 		miner.Power = &power
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -47,7 +58,11 @@ func (a *Api) getMiner(id abi.ActorID, opt ...Option) (*Miner, error) {
 	}
 
 	var agent AgentInfo
-	err = db.Order("updated_at desc").First(&agent, "miner_id = ?", miner.ID).Error
+	if opt.Tag != "" {
+		err = commonQuery.Where("tag = ?", opt.Tag).First(&agent, "miner_id = ?", miner.ID).Error
+	} else {
+		err = commonQuery.First(&agent, "miner_id = ?", miner.ID).Error
+	}
 	if err == nil {
 		miner.Agent = &agent
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -73,17 +88,6 @@ func (a *Api) getPowers(before time.Time, ids ...abi.ActorID) ([]PowerInfo, erro
 		return nil, err
 	}
 	return powers, nil
-}
-
-func (a *Api) getAgents(ids ...abi.ActorID) ([]AgentInfo, error) {
-	ids = util.Unique(ids)
-
-	var agents []AgentInfo
-	err := db.Select("miner_id, name, updated_at,  max(updated_at) as max_updated_at").Where("miner_id in ?", ids).Group("miner_id").Table("agent_infos").Find(&agents).Error
-	if err != nil {
-		return nil, err
-	}
-	return agents, nil
 }
 
 func (a *Api) getMiners(ids ...abi.ActorID) ([]Miner, error) {
