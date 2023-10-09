@@ -264,8 +264,12 @@ func RegisterApi(a *api.Api) {
 			return
 		}
 
-		if opt.Before.IsZero() || opt.After.IsZero() || !opt.Before.Before(opt.After) {
-			c.JSON(500, gin.H{"error": "before and after must be set and before should less than after"})
+		if opt.After.IsZero() {
+			opt.After = time.Now()
+		}
+
+		if opt.Before.IsZero() {
+			c.JSON(500, gin.H{"error": "before must be set and before should less than after"})
 			return
 		}
 
