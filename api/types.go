@@ -14,6 +14,8 @@ import (
 )
 
 type Option struct {
+	// there maybe some error to use UTC time to compare in db, should use local time
+	// todo: use local time, and modify web app accordingly
 	Before time.Time
 	Tag    string
 
